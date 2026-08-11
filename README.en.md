@@ -19,4 +19,6 @@ Open `http://127.0.0.1:4173` after ComfyUI is running.
 
 The default five-second mode accepts one complete scene prompt. For 10, 15, or 30 seconds, use the visual beat builder or provide every five-second beat explicitly, for example `0-5s: ...` and `5-10s: ...`. H3 Flow preflights the timeline and blocks submission when a later beat is missing. Creative parameters and beat drafts can be recovered from this browser; API keys, reference images, and hardware data are excluded from that draft.
 
+Future research for a gated theme-to-series production system—series bible, episode scripts, shot plans, locked character / wardrobe / prop / location assets, pilot validation, resumable queues, and shot-level repair—is documented in the [AI short-drama roadmap](docs/ai-short-drama-roadmap.md). It is not a current released capability.
+
 H3 Flow is MIT-licensed. Model weights, ComfyUI, and third-party plugins are not included and remain subject to their respective licenses.

@@ -13,6 +13,7 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - No automatic third-party plugin installation.
 - Localhost-only by default, no telemetry, no personal data in the public repository.
 - Public GitHub documentation, tests, contribution, security, privacy, and license files.
+- Future structured AI short-drama planning from a theme to series bible, episode scripts, shot plans, locked production assets, pilot validation, and resumable batch execution.
 
 ## Progress
 
@@ -31,6 +32,7 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - [ ] Multi-image Ref2VA UI and tag assistant.
 - [ ] Motion-context plugin security audit, installation by user, GPU validation, seam metrics, and release gate.
 - [ ] Cross-platform packaged launcher.
+- [ ] AI short-drama planner and production pipeline; research contract is documented, but no full-series generation capability is claimed.
 
 ## Verification evidence
 
@@ -60,3 +62,12 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - At 1440×900 the plan is fully visible from y=88 to y=880. With technical details expanded, 186px of internal overflow remains reachable and the action area reaches the bottom correctly.
 - The creator form reaches its quality section at its maximum internal scroll. The 390×844 layout retains normal page scrolling and the mobile preflight dock.
 - Isolated current-code browser verification produced zero console errors or warnings and made no `/prompt` request.
+
+## AI short-drama production research — 2026-08-12
+
+- The requested future surface starts from a theme and optional genre, audience, style, episode count, per-episode duration, aspect ratio, cast, dialogue, and quality controls.
+- Research across MiniMax H3, ComfyUI, LTX Studio, MovieAgent, FilmAgent, StoryDiffusion, and StreamingT2V supports a hierarchical production model rather than one unconstrained prompt: series bible → locked assets → episode plans → scene scripts → shot plans → storyboards → H3 compilation → pilot gate → resumable batch queue → continuity review and shot-level repair.
+- The core contract is a versioned local project with stable IDs for characters, wardrobe states, props, locations, episodes, scenes, shots, and generation records. Changes such as costume swaps, damaged props, time of day, and character relationships must be explicit state transitions.
+- One-click full-series execution remains gated behind approved assets, a passing pilot episode, runtime / model / storage checks, and a recoverable queue. Script-only and storyboard-only modes must not call ComfyUI.
+- Development is staged as P0 structured planner, P1 asset bible, P2 pilot episode, P3 series batching and repair, and P4 controlled one-click production.
+- The full product contract, schemas, consistency strategy, safety boundaries, acceptance gates, and primary research sources are recorded in `docs/ai-short-drama-roadmap.md`.
