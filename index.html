@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="H3 Flow：为 MiniMax H3 自动规划显存安全的 ComfyUI 视频工作流。" />
+    <title>H3 Flow · 自动工作流制片台</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23b6dc24' d='M4 8.5 16 2l12 6.5v15L16 30 4 23.5z'/%3E%3Cpath fill='%23171814' d='m10 12 6-3.2 6 3.2v8l-6 3.2-6-3.2z'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <svg class="svg-sprite" aria-hidden="true">
+      <symbol id="icon-mark" viewBox="0 0 32 32">
+        <path d="M4 8.5 16 2l12 6.5v15L16 30 4 23.5v-15Z" fill="currentColor" />
+        <path d="m10 12 6-3.2 6 3.2v8l-6 3.2-6-3.2v-8Z" fill="var(--ink)" />
+        <path d="M16 8.8v14.4M10 12l12 8M22 12l-12 8" fill="none" stroke="currentColor" stroke-width="1.4" />
+      </symbol>
+      <symbol id="icon-link" viewBox="0 0 24 24">
+        <path d="M9.5 14.5 14.5 9M7.2 17.8l-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0M16.8 6.2l1-1a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </symbol>
+      <symbol id="icon-upload" viewBox="0 0 24 24">
+        <path d="M12 16V3m0 0L7 8m5-5 5 5M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-spark" viewBox="0 0 24 24">
+        <path d="M12 2c.55 5.45 3.55 8.45 9 9-5.45.55-8.45 3.55-9 9-.55-5.45-3.55-8.45-9-9 5.45-.55 8.45-3.55 9-9Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <path d="m5 12.5 4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-chevron" viewBox="0 0 24 24">
+        <path d="m8 10 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-download" viewBox="0 0 24 24">
+        <path d="M12 3v12m0 0 5-5m-5 5-5-5M4 19h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24">
+        <path d="M8 5.5v13l11-6.5-11-6.5Z" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-close" viewBox="0 0 24 24">
+        <path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </symbol>
+    </svg>
+
+    <header class="appbar">
+      <a class="brand" href="/" aria-label="H3 Flow 首页">
+        <svg class="brand__mark"><use href="#icon-mark"></use></svg>
+        <span class="brand__name">H3 Flow</span>
+        <span class="brand__descriptor">自动工作流制片台</span>
+      </a>
+      <div class="appbar__actions">
+        <span class="local-note">仅在本机运行</span>
+        <button class="connection" id="connectionButton" type="button" aria-label="查看 ComfyUI 连接状态">
+          <span class="connection__dot" id="connectionDot"></span>
+          <span id="connectionText">正在检测</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="creator" aria-labelledby="pageTitle">
+        <div class="hero-copy">
+          <p class="eyebrow">AI VIDEO ORCHESTRATOR / MINIMAX H3</p>
+          <h1 id="pageTitle">只讲画面，<br /><span>节点交给系统。</span></h1>
+          <p class="hero-copy__body">填写一次创意，系统会根据显卡、时长与清晰度自动拆分安全工作流，并直接交给 ComfyUI。</p>
+        </div>
+
+        <form class="flow-form" id="flowForm" novalidate>
+          <section class="flow-section" aria-labelledby="sceneHeading">
+            <div class="section-index" aria-hidden="true">01</div>
+            <div class="section-content">
+              <div class="section-heading">
+                <div>
+                  <h2 id="sceneHeading">描述你想看到的画面</h2>
+                  <p>像给摄影师讲戏一样写；镜头、动作、光线和声音越明确，结果越稳定。</p>
+                </div>
+                <span class="field-count" id="promptCount">0 / 12000</span>
+              </div>
+              <label class="sr-only" for="prompt">视频提示词</label>
+              <div class="prompt-shell">
+                <textarea id="prompt" name="prompt" rows="8" maxlength="12000" placeholder="例如：一个连续的电影感镜头。傍晚的上海屋顶，一位穿深色风衣的成年女性迎着风走向镜头……&#10;&#10;声音：城市远处车流、衣料摩擦与稳定的环境底噪；不要配乐。"></textarea>
+                <div class="prompt-tools">
+                  <span>快速起稿</span>
+                  <div class="prompt-chips" aria-label="提示词起稿模板">
+                    <button type="button" data-template="commercial">产品广告</button>
+                    <button type="button" data-template="portrait">人物表演</button>
+                    <button type="button" data-template="atmosphere">氛围镜头</button>
+                  </div>
+                </div>
+              </div>
+              <p class="field-error" id="promptError" role="alert"></p>
+
+              <div class="reference-block">
+                <div class="reference-copy">
+                  <span class="field-label">参考图 <span>可选 · 真实接入工作流</span></span>
+                  <p>首帧模式连接到 H3 FL2VA；身份 / 风格模式连接到独立 Ref2VA 权重。JPG、PNG、WebP，最大 12MB。</p>
+                </div>
+                <div class="reference-mode" id="referenceModeControl" role="radiogroup" aria-label="参考图用途">
+                  <button type="button" data-value="first_frame" class="is-selected" role="radio" aria-checked="true">
+                    <strong>首帧图生视频</strong><span>锁定开场构图与动作起点</span>
+                  </button>
+                  <button type="button" data-value="identity" role="radio" aria-checked="false">
+                    <strong>身份 / 风格参考</strong><span>使用 Ref2VA 保持人物或产品特征</span>
+                  </button>
+                </div>
+                <input class="sr-only" id="referenceInput" type="file" accept="image/jpeg,image/png,image/webp" />
+                <button class="upload-zone" id="uploadButton" type="button">
+                  <span class="upload-zone__empty" id="uploadEmpty">
+                    <svg><use href="#icon-upload"></use></svg>
+                    <span><strong>选择参考图</strong><small>也可以拖到这里</small></span>
+                  </span>
+                  <span class="upload-zone__preview" id="uploadPreview" hidden>
+                    <img id="referencePreview" alt="已选择的参考图预览" />
+                    <span><strong id="referenceName"></strong><small id="referenceMeta">正在上传</small></span>
+                    <span class="upload-zone__change">更换</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="flow-section" aria-labelledby="formatHeading">
+            <div class="section-index" aria-hidden="true">02</div>
+            <div class="section-content">
+              <div class="section-heading compact">
+                <div>
+                  <h2 id="formatHeading">决定成片节奏</h2>
+                  <p>时长越长，系统会拆成更多安全片段并自动续接。</p>
+                </div>
+              </div>
+              <fieldset class="control-group">
+                <legend>视频时长</legend>
+                <div class="segmented segmented--duration" id="durationControl">
+                  <button type="button" data-value="5"><strong>5</strong><span>秒</span></button>
+                  <button type="button" data-value="10" class="is-selected"><strong>10</strong><span>秒</span></button>
+                  <button type="button" data-value="15"><strong>15</strong><span>秒</span></button>
+                  <button type="button" data-value="30"><strong>30</strong><span>秒</span></button>
+                </div>
+              </fieldset>
+              <fieldset class="control-group control-group--inline">
+                <legend>画面比例</legend>
+                <div class="segmented segmented--aspect" id="aspectControl">
+                  <button type="button" data-value="16:9" class="is-selected"><span class="ratio ratio--wide"></span>横屏 16:9</button>
+                  <button type="button" data-value="9:16"><span class="ratio ratio--tall"></span>竖屏 9:16</button>
+                  <button type="button" data-value="1:1"><span class="ratio ratio--square"></span>方形 1:1</button>
+                </div>
+              </fieldset>
+            </div>
+          </section>
+
+          <section class="flow-section" aria-labelledby="qualityHeading">
+            <div class="section-index" aria-hidden="true">03</div>
+            <div class="section-content">
+              <div class="section-heading compact">
+                <div>
+                  <h2 id="qualityHeading">选择交付质量</h2>
+                  <p>系统会在不改变创意的前提下，自动把高风险组合降到安全档。</p>
+                </div>
+              </div>
+              <div class="quality-grid" id="qualityControl" role="radiogroup" aria-label="输出质量">
+                <button class="quality-card" type="button" data-value="draft" role="radio" aria-checked="false">
+                  <span class="quality-card__top"><strong>快速预览</strong><span>480P</span></span>
+                  <span class="quality-card__body">最快确认构图、动作与提示词方向</span>
+                  <span class="quality-card__meta">原生输出</span>
+                </button>
+                <button class="quality-card is-selected" type="button" data-value="balanced" role="radio" aria-checked="true">
+                  <span class="quality-card__top"><strong>智能成片</strong><span>720P</span></span>
+                  <span class="quality-card__body">画质与稳定性最平衡，适合多数交付</span>
+                  <span class="quality-card__meta">推荐</span>
+                </button>
+                <button class="quality-card" type="button" data-value="studio" role="radio" aria-checked="false">
+                  <span class="quality-card__top"><strong>影院精修</strong><span>1080P</span></span>
+                  <span class="quality-card__body">SeedVR2 时序精修，硬件不够时自动保护</span>
+                  <span class="quality-card__meta">高质量</span>
+                </button>
+              </div>
+
+              <details class="advanced">
+                <summary>高级设置 <svg><use href="#icon-chevron"></use></svg></summary>
+                <div class="advanced__body">
+                  <label for="seed">随机种子</label>
+                  <div class="seed-control">
+                    <input id="seed" type="number" min="0" max="4294967295" placeholder="自动生成" />
+                    <button type="button" id="randomSeed">换一个</button>
+                  </div>
+                  <p>留空会自动生成；固定种子便于复现同一创意方向。</p>
+                </div>
+              </details>
+            </div>
+          </section>
+        </form>
+      </section>
+
+      <aside class="plan-panel" aria-labelledby="planTitle">
+        <div class="plan-panel__header">
+          <div>
+            <p class="eyebrow eyebrow--dark">LIVE SAFETY PLAN</p>
+            <h2 id="planTitle">你的执行方案</h2>
+          </div>
+          <span class="safety-state" id="safetyState"><span></span>正在分析</span>
+        </div>
+
+        <div class="timeline-card">
+          <div class="timeline-card__header">
+            <span>生成路径</span>
+            <strong id="segmentLabel">2 个安全片段</strong>
+          </div>
+          <div class="segment-track" id="segmentTrack" aria-label="视频片段计划"></div>
+          <div class="timeline-card__footer">
+            <span>00:00</span>
+            <span id="durationLabel">00:10</span>
+          </div>
+        </div>
+
+        <dl class="plan-specs">
+          <div><dt>生成方式</dt><dd id="modeValue">文生视频</dd></div>
+          <div><dt>片段衔接</dt><dd id="continuityValue">末帧续接</dd></div>
+          <div><dt>采样画布</dt><dd id="sourceValue">864×480</dd></div>
+          <div><dt>最终交付</dt><dd id="outputValue">1280×720</dd></div>
+          <div><dt>同步声音</dt><dd>原生立体声</dd></div>
+        </dl>
+
+        <div class="resource-card">
+          <div class="resource-card__title">
+            <span>本机资源</span>
+            <button id="refreshStatus" type="button">重新检测</button>
+          </div>
+          <div class="resource-row">
+            <div class="resource-row__label"><span>GPU</span><strong id="gpuValue">检测中</strong></div>
+            <div class="resource-meter"><span id="gpuMeter"></span><i></i></div>
+            <small id="gpuNote">为工作流保留 1.5GB</small>
+          </div>
+          <div class="resource-row">
+            <div class="resource-row__label"><span>系统提交</span><strong id="ramValue">检测中</strong></div>
+            <div class="resource-meter"><span id="ramMeter"></span><i></i></div>
+            <small id="ramNote">长视频解码缓冲区</small>
+          </div>
+        </div>
+
+        <div class="compatibility-card" id="compatibilityCard" aria-live="polite">
+          <div class="compatibility-card__title">
+            <span>环境基线</span>
+            <strong id="compatibilityState">检测中</strong>
+          </div>
+          <dl class="compatibility-list">
+            <div><dt>运行时</dt><dd id="runtimeCompatibility">读取中</dd></div>
+            <div><dt>核心模型</dt><dd id="baseCompatibility">读取中</dd></div>
+            <div><dt>多参考</dt><dd id="referenceCompatibility">读取中</dd></div>
+            <div><dt>潜空间续接</dt><dd id="continuityCompatibility">读取中</dd></div>
+          </dl>
+        </div>
+
+        <div class="plan-notice" id="planNotice" hidden>
+          <svg><use href="#icon-spark"></use></svg>
+          <div><strong id="noticeTitle"></strong><p id="noticeDetail"></p></div>
+        </div>
+
+        <div class="blocker-list" id="blockerList" aria-live="polite"></div>
+
+        <div class="protection-list">
+          <p>自动保护已开启</p>
+          <ul id="protectionList"></ul>
+        </div>
+
+        <div class="plan-actions">
+          <button class="primary-action" id="generateButton" type="button">
+            <span id="generateText">生成视频</span>
+            <svg><use href="#icon-play"></use></svg>
+          </button>
+          <button class="secondary-action" id="exportButton" type="button">
+            <svg><use href="#icon-download"></use></svg>
+            导出工作流 JSON
+          </button>
+          <p id="actionHint">提交前会再次检查节点、模型、队列与显存档位。</p>
+        </div>
+      </aside>
+    </main>
+
+    <section class="job-panel" id="jobPanel" aria-labelledby="jobTitle" hidden>
+      <div class="job-panel__backdrop"></div>
+      <div class="job-panel__sheet">
+        <button class="job-panel__close" id="closeJob" type="button" aria-label="关闭任务面板">
+          <svg><use href="#icon-close"></use></svg>
+        </button>
+        <div class="job-orbit" aria-hidden="true"><span></span><i></i></div>
+        <p class="eyebrow">COMFYUI PRODUCTION</p>
+        <h2 id="jobTitle">工作流已进入制作队列</h2>
+        <p class="job-panel__summary" id="jobSummary">系统正在按安全片段逐段生成；你可以关闭这个面板，任务不会中断。</p>
+        <div class="job-progress"><span id="jobProgress"></span></div>
+        <div class="job-meta">
+          <span>任务编号</span><strong id="jobId">—</strong>
+          <span>当前状态</span><strong id="jobState">等待 ComfyUI</strong>
+        </div>
+        <div class="job-results" id="jobResults" hidden></div>
+      </div>
+    </section>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

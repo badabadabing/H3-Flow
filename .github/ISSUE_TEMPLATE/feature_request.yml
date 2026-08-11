@@ -1,0 +1,17 @@
+name: Feature request
+description: Propose a workflow or product improvement.
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: user_problem
+    attributes:
+      label: User problem
+      description: Describe the workflow problem before proposing a node-level solution.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Primary references or evidence
+      description: Link official documentation, upstream code, or a paper when relevant.
