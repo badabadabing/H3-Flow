@@ -13,7 +13,8 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - No automatic third-party plugin installation.
 - Localhost-only by default, no telemetry, no personal data in the public repository.
 - Public GitHub documentation, tests, contribution, security, privacy, and license files.
-- Future structured AI short-drama planning from a theme to series bible, episode scripts, shot plans, locked production assets, pilot validation, and resumable batch execution.
+- Structured AI short-drama planning from a theme to series bible, production assets, 1–8 episode scripts, scenes, validated shots, local export, and shot-level H3 handoff.
+- Full-season video submission must remain gated behind real reference assets, pilot validation, runtime checks, and a recoverable queue.
 
 ## Progress
 
@@ -32,7 +33,8 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - [ ] Multi-image Ref2VA UI and tag assistant.
 - [ ] Motion-context plugin security audit, installation by user, GPU validation, seam metrics, and release gate.
 - [ ] Cross-platform packaged launcher.
-- [ ] AI short-drama planner and production pipeline; research contract is documented, but no full-series generation capability is claimed.
+- [x] AI short-drama P0 planner: user-configured model, strict local schema validation, stable asset IDs, exact episode budgets, gap-free five-second beats, local draft, season ledger, JSON / Markdown export, and shot-level H3 handoff.
+- [ ] AI short-drama P1–P4: real character / wardrobe / prop / location reference assets, pilot validation, resumable batch queue, continuity scoring, shot repair, and controlled full-series submission.
 
 ## Verification evidence
 
@@ -71,3 +73,13 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - One-click full-series execution remains gated behind approved assets, a passing pilot episode, runtime / model / storage checks, and a recoverable queue. Script-only and storyboard-only modes must not call ComfyUI.
 - Development is staged as P0 structured planner, P1 asset bible, P2 pilot episode, P3 series batching and repair, and P4 controlled one-click production.
 - The full product contract, schemas, consistency strategy, safety boundaries, acceptance gates, and primary research sources are recorded in `docs/ai-short-drama-roadmap.md`.
+
+## AI short-drama P0 delivery — 2026-08-12
+
+- The top navigation now switches between the existing single-video desk and a dedicated short-drama production desk without changing the established ComfyUI generation path.
+- Users can define theme, title, genre, 1–8 episodes, 30–120 seconds per episode, aspect ratio, 1–6 core characters, ending style, dialogue density, language, audience, and visual style.
+- `short_drama.py` treats all creative input as data, calls only the user-selected OpenAI-compatible service, requests JSON mode, and allows one bounded repair attempt after local validation failure.
+- Local validation rewrites stable IDs, resolves every asset reference, requires 5/10/15-second shots, requires consecutive five-second beats, caps the package at 128 shots, and enforces the exact selected duration for every episode.
+- The season ledger exposes overview, production assets, episodes, scenes, hooks, and shots. JSON and Markdown exports remain local. A shot handoff clears any previous reference image, writes its beats and sound into the existing H3 desk, and never submits the queue automatically.
+- Browser drafts persist creative fields and the validated package only. API key, model endpoint, model name, reference media, machine inventory, and workflows are excluded.
+- Full-series submission is visibly disabled until real reference assets, a pilot, resource checks, and resumable execution are implemented and verified.

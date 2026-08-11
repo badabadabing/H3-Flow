@@ -27,6 +27,7 @@ from typing import Any
 from PIL import Image, UnidentifiedImageError
 
 from prompt_assistant import prompt_assistant_status, rewrite_h3_prompt
+from short_drama import generate_short_drama, short_drama_status
 
 
 STATIC_ROOT = Path(__file__).resolve().parent
@@ -931,6 +932,9 @@ class H3FlowHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/prompt-assistant":
             self.send_json(prompt_assistant_status())
             return
+        if parsed.path == "/api/short-drama":
+            self.send_json(short_drama_status())
+            return
         if parsed.path.startswith("/api/job/"):
             prompt_id = parsed.path.rsplit("/", 1)[-1]
             try:
@@ -979,6 +983,9 @@ class H3FlowHandler(BaseHTTPRequestHandler):
                 return
             if self.path == "/api/prompt-assistant":
                 self.send_json(rewrite_h3_prompt(payload))
+                return
+            if self.path == "/api/short-drama/plan":
+                self.send_json(generate_short_drama(payload))
                 return
             if self.path == "/api/start":
                 if not START_SCRIPT.is_file():

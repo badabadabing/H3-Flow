@@ -288,19 +288,29 @@ def _upstream_error(exc: urllib.error.HTTPError) -> str:
     return safe or f"HTTP {exc.code}"
 
 
-def rewrite_h3_prompt(raw: dict[str, Any]) -> dict[str, Any]:
-    messages, request = build_messages(raw)
-    config = _resolve_config(raw.get("api_config"))
+def request_chat_completion(
+    messages: list[dict[str, str]],
+    api_config: dict[str, Any] | None,
+    *,
+    temperature: float,
+    max_tokens: int,
+    json_mode: bool = False,
+    timeout: int = 90,
+) -> tuple[str, dict[str, Any], dict[str, str]]:
+    """Call a user-configured OpenAI-compatible service without persisting credentials."""
+    config = _resolve_config(api_config)
     body: dict[str, Any] = {
         "model": config["model"],
         "messages": messages,
-        "temperature": 0.35,
-        "max_tokens": 4096,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
         "stream": False,
     }
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
     if config["provider"] == "DeepSeek" and config["model"].startswith("deepseek-v4"):
         body["thinking"] = {"type": "disabled"}
-    headers = {"Content-Type": "application/json", "User-Agent": "H3-Flow/1.1"}
+    headers = {"Content-Type": "application/json", "User-Agent": "H3-Flow/1.2"}
     if config["api_key"]:
         headers["Authorization"] = f"Bearer {config['api_key']}"
     upstream = urllib.request.Request(
@@ -310,7 +320,7 @@ def rewrite_h3_prompt(raw: dict[str, Any]) -> dict[str, Any]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(upstream, timeout=90) as response:
+        with urllib.request.urlopen(upstream, timeout=timeout) as response:
             result = json.load(response)
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"模型服务拒绝请求：{_upstream_error(exc)}") from exc
@@ -323,7 +333,17 @@ def rewrite_h3_prompt(raw: dict[str, Any]) -> dict[str, Any]:
         content = result["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise RuntimeError("模型服务返回了无法识别的 Chat Completions 响应") from exc
-    prompt = _strip_fences(str(content or ""))
+    return _strip_fences(str(content or "")), result, config
+
+
+def rewrite_h3_prompt(raw: dict[str, Any]) -> dict[str, Any]:
+    messages, request = build_messages(raw)
+    prompt, result, config = request_chat_completion(
+        messages,
+        raw.get("api_config"),
+        temperature=0.35,
+        max_tokens=4096,
+    )
     checks = validate_generated_prompt(prompt, request)
     usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
     return {

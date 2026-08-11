@@ -1205,3 +1205,534 @@ updateStudioProgress();
 setupPlanObserver();
 refreshStatus();
 refreshPromptAssistantStatus();
+
+const DRAMA_DRAFT_KEY = "h3-flow:short-drama-project:v1";
+const WORKSPACE_MODE_KEY = "h3-flow:workspace-mode:v1";
+const dramaState = {
+  package: null,
+  status: null,
+  busy: false,
+  view: "overview",
+  episodeIndex: 0,
+};
+
+const dramaElements = {
+  modes: $("#workspaceModes"),
+  videoWorkspace: $("#videoWorkspace"),
+  workspace: $("#dramaWorkspace"),
+  form: $("#dramaForm"),
+  theme: $("#dramaTheme"),
+  themeCount: $("#dramaThemeCount"),
+  workingTitle: $("#dramaWorkingTitle"),
+  genre: $("#dramaGenre"),
+  episodeCount: $("#dramaEpisodeCount"),
+  episodeDuration: $("#dramaEpisodeDuration"),
+  aspect: $("#dramaAspect"),
+  castCount: $("#dramaCastCount"),
+  endingStyle: $("#dramaEndingStyle"),
+  dialogueDensity: $("#dramaDialogueDensity"),
+  language: $("#dramaLanguage"),
+  audience: $("#dramaAudience"),
+  quality: $("#dramaQuality"),
+  visualStyle: $("#dramaVisualStyle"),
+  baseUrl: $("#dramaBaseUrl"),
+  model: $("#dramaModel"),
+  apiKey: $("#dramaApiKey"),
+  providerSettings: $("#dramaProviderSettings"),
+  providerState: $("#dramaProviderState"),
+  keyState: $("#dramaKeyState"),
+  draftState: $("#dramaDraftState"),
+  scopeLabel: $("#dramaScopeLabel"),
+  error: $("#dramaError"),
+  generate: $("#dramaGenerate"),
+  generateText: $("#dramaGenerateText"),
+  empty: $("#dramaEmpty"),
+  package: $("#dramaPackage"),
+  packageGenre: $("#dramaPackageGenre"),
+  packageTitle: $("#dramaPackageTitle"),
+  packageLogline: $("#dramaPackageLogline"),
+  packageMetrics: $("#dramaPackageMetrics"),
+  tabs: $("#dramaTabs"),
+  ledger: $("#seasonLedger"),
+  view: $("#dramaPackageView"),
+  exportJson: $("#dramaExportJson"),
+  exportMarkdown: $("#dramaExportMarkdown"),
+};
+
+const dramaDraftFields = [
+  "theme", "workingTitle", "genre", "episodeCount", "episodeDuration", "aspect", "castCount",
+  "endingStyle", "dialogueDensity", "language", "audience", "quality", "visualStyle",
+];
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatDramaDuration(seconds) {
+  const value = Number(seconds) || 0;
+  if (value < 60) return `${value} 秒`;
+  const minutes = Math.floor(value / 60);
+  const remainder = value % 60;
+  return remainder ? `${minutes} 分 ${remainder} 秒` : `${minutes} 分钟`;
+}
+
+function dramaInputPayload() {
+  return {
+    theme: dramaElements.theme.value.trim(),
+    working_title: dramaElements.workingTitle.value.trim(),
+    genre: dramaElements.genre.value,
+    episode_count: Number(dramaElements.episodeCount.value),
+    episode_duration_seconds: Number(dramaElements.episodeDuration.value),
+    aspect: dramaElements.aspect.value,
+    cast_count: Number(dramaElements.castCount.value),
+    ending_style: dramaElements.endingStyle.value,
+    dialogue_density: dramaElements.dialogueDensity.value,
+    language: dramaElements.language.value.trim(),
+    audience: dramaElements.audience.value.trim(),
+    visual_style: dramaElements.visualStyle.value.trim(),
+    quality: dramaElements.quality.value,
+  };
+}
+
+function updateDramaScope() {
+  const count = Math.max(1, Math.min(8, Number(dramaElements.episodeCount.value) || 1));
+  const duration = Number(dramaElements.episodeDuration.value) || 60;
+  dramaElements.scopeLabel.textContent = `${count} 集 × ${duration} 秒 · 共 ${formatDramaDuration(count * duration)}`;
+  dramaElements.themeCount.textContent = `${dramaElements.theme.value.length} / 4000`;
+}
+
+let dramaDraftTimer;
+function persistDramaDraft() {
+  const inputs = {};
+  for (const field of dramaDraftFields) inputs[field] = dramaElements[field].value;
+  const updatedAt = new Date().toISOString();
+  const storedPackage = dramaState.package ? {
+    ...dramaState.package,
+    generation: dramaState.package.generation ? {
+      provider: dramaState.package.generation.provider,
+      repaired_once: Boolean(dramaState.package.generation.repaired_once),
+    } : undefined,
+  } : null;
+  try {
+    localStorage.setItem(DRAMA_DRAFT_KEY, JSON.stringify({ inputs, package: storedPackage, updatedAt }));
+    const time = new Date(updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    dramaElements.draftState.textContent = `已自动保存 · ${time}`;
+  } catch {
+    dramaElements.draftState.textContent = "本机空间不足，未保存";
+  }
+}
+
+function queueDramaDraftSave() {
+  clearTimeout(dramaDraftTimer);
+  dramaDraftTimer = setTimeout(persistDramaDraft, 320);
+}
+
+function restoreDramaDraft() {
+  let draft;
+  try {
+    draft = JSON.parse(localStorage.getItem(DRAMA_DRAFT_KEY) || "null");
+  } catch {
+    draft = null;
+  }
+  if (!draft || typeof draft !== "object") return;
+  for (const field of dramaDraftFields) {
+    if (typeof draft.inputs?.[field] === "string") dramaElements[field].value = draft.inputs[field];
+  }
+  if (draft.package && typeof draft.package === "object" && Array.isArray(draft.package.episodes)) {
+    dramaState.package = draft.package;
+    renderDramaPackage();
+  }
+  if (draft.updatedAt) {
+    const stamp = new Date(draft.updatedAt);
+    if (!Number.isNaN(stamp.getTime())) {
+      dramaElements.draftState.textContent = `已恢复 · ${stamp.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`;
+    }
+  }
+  updateDramaScope();
+}
+
+function switchWorkspace(mode, { persist = true } = {}) {
+  const nextMode = mode === "drama" ? "drama" : "video";
+  document.body.dataset.mode = nextMode;
+  dramaElements.videoWorkspace.hidden = nextMode !== "video";
+  dramaElements.workspace.hidden = nextMode !== "drama";
+  for (const button of dramaElements.modes.querySelectorAll("button[data-mode]")) {
+    const selected = button.dataset.mode === nextMode;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  if (persist) {
+    try { localStorage.setItem(WORKSPACE_MODE_KEY, nextMode); } catch { /* mode persistence is optional */ }
+  }
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+async function refreshDramaStatus() {
+  try {
+    dramaState.status = await api("/api/short-drama");
+    dramaElements.baseUrl.value = dramaState.status.provider.default_base_url;
+    dramaElements.model.value = dramaState.status.provider.default_model;
+    dramaElements.providerState.textContent = dramaState.status.provider.environment_configured
+      ? `${dramaState.status.provider.name} 已由启动环境配置`
+      : "填写 DeepSeek 或其他兼容模型";
+    dramaElements.keyState.textContent = dramaState.status.provider.environment_configured
+      ? "启动环境已配置"
+      : "仅保留到关闭页面";
+    dramaElements.apiKey.placeholder = dramaState.status.provider.environment_configured
+      ? "留空即可使用启动环境中的 Key"
+      : "由你填写，不写入项目";
+  } catch (error) {
+    dramaElements.providerState.textContent = "短剧服务状态读取失败";
+    dramaElements.error.textContent = error.message;
+  }
+}
+
+function validateDramaSubmission() {
+  const theme = dramaElements.theme.value.trim();
+  if (theme.length < 12) {
+    dramaElements.error.textContent = "请至少用 12 个字符写清主题与核心冲突。";
+    dramaElements.theme.focus();
+    return false;
+  }
+  const count = Number(dramaElements.episodeCount.value);
+  if (!Number.isInteger(count) || count < 1 || count > 8) {
+    dramaElements.error.textContent = "当前制片包一次支持 1–8 集。";
+    dramaElements.episodeCount.focus();
+    return false;
+  }
+  let providerUrl;
+  try {
+    providerUrl = new URL(dramaElements.baseUrl.value.trim());
+  } catch {
+    dramaElements.error.textContent = "请填写有效的模型服务地址。";
+    dramaElements.providerSettings.open = true;
+    dramaElements.baseUrl.focus();
+    return false;
+  }
+  const isLoopback = new Set(["127.0.0.1", "localhost", "[::1]"]).has(providerUrl.hostname);
+  if (providerUrl.protocol === "http:" && !isLoopback) {
+    dramaElements.error.textContent = "远程模型服务必须使用 HTTPS；HTTP 仅允许本机地址。";
+    dramaElements.providerSettings.open = true;
+    return false;
+  }
+  if (!dramaElements.model.value.trim()) {
+    dramaElements.error.textContent = "请填写模型名称。";
+    dramaElements.providerSettings.open = true;
+    dramaElements.model.focus();
+    return false;
+  }
+  if (!dramaElements.apiKey.value.trim() && !dramaState.status?.provider.environment_configured && !isLoopback) {
+    dramaElements.error.textContent = "远程模型服务需要 API Key；Key 只用于本次请求且不会保存。";
+    dramaElements.providerSettings.open = true;
+    dramaElements.apiKey.focus();
+    return false;
+  }
+  dramaElements.error.textContent = "";
+  return true;
+}
+
+function setDramaBusy(busy) {
+  dramaState.busy = busy;
+  dramaElements.generate.disabled = busy;
+  dramaElements.generate.classList.toggle("is-loading", busy);
+  dramaElements.generateText.textContent = busy ? "正在编排资产、分集与镜头" : "生成完整制片包";
+  for (const field of dramaElements.form.querySelectorAll("input, textarea, select")) field.disabled = busy;
+}
+
+function countEpisodeShots(episode) {
+  return episode.scenes.reduce((total, scene) => total + scene.shots.length, 0);
+}
+
+function renderDramaLedger() {
+  const episodes = dramaState.package.episodes;
+  dramaElements.ledger.innerHTML = episodes.map((episode, index) => `
+    <button type="button" data-episode-index="${index}" class="${index === dramaState.episodeIndex ? "is-selected" : ""}">
+      <span>${escapeHtml(episode.id)}</span><strong>${escapeHtml(episode.title)}</strong>
+      <small>${episode.scenes.length} 场 · ${countEpisodeShots(episode)} 镜 · ${episode.duration_seconds} 秒</small>
+    </button>
+  `).join("");
+}
+
+function renderDramaOverview() {
+  const pack = dramaState.package;
+  return `
+    <div class="drama-overview-grid">
+      <section class="drama-info-card"><h4>持续追剧动力</h4><p>${escapeHtml(pack.project.narrative_engine)}</p></section>
+      <section class="drama-info-card"><h4>叙事与声音基调</h4><p>${escapeHtml(pack.project.tone)}</p><p>${escapeHtml(pack.bible.audio_language)}</p></section>
+      <section class="drama-info-card"><h4>世界规则</h4><ul>${pack.bible.world_rules.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>
+      <section class="drama-info-card"><h4>整季连续性门禁</h4><ul>${pack.bible.continuity_rules.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>
+      ${pack.episodes.map((episode) => `<section class="drama-info-card"><h4>${escapeHtml(episode.id)} · ${escapeHtml(episode.title)}</h4><p>${escapeHtml(episode.logline)}</p><ul><li>开场：${escapeHtml(episode.hook)}</li><li>结尾：${escapeHtml(episode.ending_hook)}</li></ul></section>`).join("")}
+    </div>`;
+}
+
+function renderCharacterCard(character) {
+  return `<section class="drama-asset-card">
+    <span>${escapeHtml(character.id)} / CHARACTER</span><h4>${escapeHtml(character.name)} · ${escapeHtml(character.role)}</h4>
+    <p>${escapeHtml(character.appearance)}</p>
+    <dl>
+      <div><dt>角色目标</dt><dd>${escapeHtml(character.goal)}</dd></div>
+      <div><dt>内在冲突</dt><dd>${escapeHtml(character.conflict)}</dd></div>
+      <div><dt>声音锚点</dt><dd>${escapeHtml(character.voice)}</dd></div>
+      ${character.wardrobe_states.map((wardrobe) => `<div><dt>${escapeHtml(wardrobe.id)}</dt><dd><strong>${escapeHtml(wardrobe.label)}</strong> · ${escapeHtml(wardrobe.description)} · ${escapeHtml(wardrobe.continuity_note)}</dd></div>`).join("")}
+    </dl>
+  </section>`;
+}
+
+function renderDramaAssets() {
+  const pack = dramaState.package;
+  return `<div class="drama-asset-grid">
+    ${pack.characters.map(renderCharacterCard).join("")}
+    ${pack.locations.map((location) => `<section class="drama-asset-card"><span>${escapeHtml(location.id)} / LOCATION</span><h4>${escapeHtml(location.name)}</h4><p>${escapeHtml(location.description)}</p><dl><div><dt>固定光线</dt><dd>${escapeHtml(location.lighting_rule)}</dd></div><div><dt>连续规则</dt><dd>${escapeHtml(location.continuity_rule)}</dd></div></dl></section>`).join("")}
+    ${pack.props.map((prop) => `<section class="drama-asset-card"><span>${escapeHtml(prop.id)} / PROP</span><h4>${escapeHtml(prop.name)}</h4><p>${escapeHtml(prop.description)}</p><dl><div><dt>连续规则</dt><dd>${escapeHtml(prop.continuity_rule)}</dd></div></dl></section>`).join("")}
+  </div>`;
+}
+
+function renderDramaEpisode() {
+  const episode = dramaState.package.episodes[dramaState.episodeIndex];
+  if (!episode) return "";
+  let elapsed = 0;
+  return `<div class="drama-episode-view">
+    <section class="drama-episode-intro">
+      <div><h4>${escapeHtml(episode.id)} · ${escapeHtml(episode.title)}</h4><p>${escapeHtml(episode.logline)}</p></div>
+      <div class="drama-hook-list"><div><span>OPEN</span><p>${escapeHtml(episode.hook)}</p></div><div><span>END</span><p>${escapeHtml(episode.ending_hook)}</p></div></div>
+    </section>
+    ${episode.scenes.map((scene, sceneIndex) => {
+      const sceneStart = elapsed;
+      elapsed += scene.duration_seconds;
+      return `<section class="drama-scene-card">
+        <header><div><span>${escapeHtml(scene.id)} · ${sceneStart}–${elapsed}s</span><h4>${escapeHtml(scene.title)}</h4></div><p>${escapeHtml(scene.time_of_day)} · ${escapeHtml(scene.location_id)} · ${scene.duration_seconds} 秒</p></header>
+        <p>${escapeHtml(scene.summary)}</p>
+        <div class="drama-shot-list">${scene.shots.map((shot, shotIndex) => {
+          const shotStart = scene.shots.slice(0, shotIndex).reduce((sum, item) => sum + item.duration_seconds, sceneStart);
+          const dialogue = shot.dialogue.map((line) => `${line.speaker_id}：${line.text}`).join(" / ");
+          return `<article class="drama-shot">
+            <div class="drama-shot__time"><span>${escapeHtml(shot.id.split("-").slice(-2).join("-"))}</span><strong>${shot.duration_seconds}s</strong><span>${shotStart}–${shotStart + shot.duration_seconds}s</span></div>
+            <div class="drama-shot__body"><strong>${escapeHtml(shot.shot_size)} · ${escapeHtml(shot.camera)}</strong><p>${escapeHtml(shot.action)}</p><small>${dialogue ? escapeHtml(dialogue) : "无对白"} · ${escapeHtml(shot.sound)}</small></div>
+            <button type="button" data-shot-handoff data-scene-index="${sceneIndex}" data-shot-index="${shotIndex}">送入 H3 工作台</button>
+          </article>`;
+        }).join("")}</div>
+      </section>`;
+    }).join("")}
+  </div>`;
+}
+
+function renderDramaView() {
+  for (const button of dramaElements.tabs.querySelectorAll("button[data-view]")) {
+    const selected = button.dataset.view === dramaState.view;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  if (dramaState.view === "assets") dramaElements.view.innerHTML = renderDramaAssets();
+  else if (dramaState.view === "episodes") dramaElements.view.innerHTML = renderDramaEpisode();
+  else dramaElements.view.innerHTML = renderDramaOverview();
+}
+
+function renderDramaPackage() {
+  const pack = dramaState.package;
+  if (!pack) {
+    dramaElements.empty.hidden = false;
+    dramaElements.package.hidden = true;
+    dramaElements.exportJson.disabled = true;
+    dramaElements.exportMarkdown.disabled = true;
+    return;
+  }
+  dramaState.episodeIndex = Math.min(dramaState.episodeIndex, pack.episodes.length - 1);
+  dramaElements.empty.hidden = true;
+  dramaElements.package.hidden = false;
+  dramaElements.exportJson.disabled = false;
+  dramaElements.exportMarkdown.disabled = false;
+  dramaElements.packageGenre.textContent = `${pack.project.genre} · ${pack.project.aspect} · ${pack.project.language}`;
+  dramaElements.packageTitle.textContent = pack.project.title;
+  dramaElements.packageLogline.textContent = pack.project.logline;
+  dramaElements.packageMetrics.innerHTML = `
+    <div><dt>集数</dt><dd>${pack.project.episode_count}</dd></div>
+    <div><dt>镜头</dt><dd>${pack.checks.shot_count}</dd></div>
+    <div><dt>总时长</dt><dd>${formatDramaDuration(pack.project.total_duration_seconds)}</dd></div>`;
+  renderDramaLedger();
+  renderDramaView();
+}
+
+async function generateDramaPackage(event) {
+  event.preventDefault();
+  if (!validateDramaSubmission()) return;
+  setDramaBusy(true);
+  try {
+    const result = await post("/api/short-drama/plan", {
+      ...dramaInputPayload(),
+      api_config: {
+        base_url: dramaElements.baseUrl.value.trim(),
+        model: dramaElements.model.value.trim(),
+        api_key: dramaElements.apiKey.value.trim(),
+      },
+    });
+    dramaState.package = result;
+    dramaState.view = "overview";
+    dramaState.episodeIndex = 0;
+    renderDramaPackage();
+    persistDramaDraft();
+    const repaired = result.generation?.repaired_once ? " · 已完成一次本地定向修复" : "";
+    const tokens = result.generation?.usage?.total_tokens ? ` · ${result.generation.usage.total_tokens} tokens` : "";
+    showToast(`${result.generation?.provider || "编剧模型"} 已生成并通过制片包校验${repaired}${tokens}`);
+  } catch (error) {
+    dramaElements.error.textContent = error.message;
+  } finally {
+    setDramaBusy(false);
+  }
+}
+
+function findDramaShot(sceneIndex, shotIndex) {
+  const episode = dramaState.package?.episodes?.[dramaState.episodeIndex];
+  return episode?.scenes?.[sceneIndex]?.shots?.[shotIndex] || null;
+}
+
+function handoffDramaShot(sceneIndex, shotIndex) {
+  const shot = findDramaShot(sceneIndex, shotIndex);
+  if (!shot) return;
+  const dialogue = shot.dialogue.map((line) => `${line.speaker_id}：${line.text}`).join("；");
+  const timeline = shot.beats.map((beat, index) => `${beat.start_second}-${beat.end_second}s: [Shot ${index + 1}] ${beat.action}`).join("\n");
+  const promptText = `${shot.h3_brief}\n\n${timeline}${dialogue ? `\n\n对白：${dialogue}` : ""}\n\noverall_soundscape：${shot.sound}\nnon_diegetic_music：${shot.music}`;
+
+  state.duration = shot.duration_seconds;
+  state.aspect = dramaState.package.project.aspect;
+  state.quality = dramaState.package.project.quality || "balanced";
+  state.reference = null;
+  state.referenceMode = "first_frame";
+  state.beatDrafts = {};
+  elements.referenceInput.value = "";
+  elements.referencePreview.removeAttribute("src");
+  elements.uploadEmpty.hidden = false;
+  elements.uploadPreview.hidden = true;
+  elements.prompt.value = promptText.slice(0, 12000);
+  elements.continuityBrief.value = `${shot.continuity_in}\n${shot.continuity_out}`.slice(0, 1200);
+  selectControl(elements.durationControl, state.duration);
+  selectControl(elements.aspectControl, state.aspect);
+  selectControl(elements.qualityControl, state.quality);
+  selectControl(elements.referenceModeControl, state.referenceMode);
+  renderBeatBuilder();
+  elements.prompt.dispatchEvent(new Event("input", { bubbles: true }));
+  switchWorkspace("video");
+  document.querySelector("#sceneSection")?.scrollIntoView({ block: "start" });
+  showToast(`${shot.id} 已送入 H3；参考图保持为空，请确认后再生成`);
+}
+
+function safeDramaFilename(extension) {
+  const title = String(dramaState.package?.project?.title || "short-drama")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .slice(0, 60);
+  return `h3-flow-${title}.${extension}`;
+}
+
+function downloadDramaFile(content, type, filename) {
+  const blob = new Blob([content], { type });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+}
+
+function dramaPackageMarkdown(pack) {
+  const lines = [
+    `# ${pack.project.title}`,
+    "",
+    `> ${pack.project.logline}`,
+    "",
+    `- 类型：${pack.project.genre}`,
+    `- 规格：${pack.project.episode_count} 集 × ${pack.project.episode_duration_seconds} 秒`,
+    `- 画幅：${pack.project.aspect}`,
+    `- 语言：${pack.project.language}`,
+    "",
+    "## 系列圣经",
+    "",
+    `叙事基调：${pack.project.tone}`,
+    "",
+    `持续追剧动力：${pack.project.narrative_engine}`,
+    "",
+    "### 连续性规则",
+    ...pack.bible.continuity_rules.map((item) => `- ${item}`),
+    "",
+    "## 角色与服装",
+  ];
+  for (const character of pack.characters) {
+    lines.push("", `### ${character.id} · ${character.name}`, "", character.appearance, "", `目标：${character.goal}`, `冲突：${character.conflict}`);
+    for (const wardrobe of character.wardrobe_states) lines.push(`- ${wardrobe.id} · ${wardrobe.label}：${wardrobe.description}；${wardrobe.continuity_note}`);
+  }
+  lines.push("", "## 分集与镜头");
+  for (const episode of pack.episodes) {
+    lines.push("", `### ${episode.id} · ${episode.title}`, "", episode.logline, "", `开场钩子：${episode.hook}`, `结尾钩子：${episode.ending_hook}`);
+    for (const scene of episode.scenes) {
+      lines.push("", `#### ${scene.id} · ${scene.title} · ${scene.duration_seconds} 秒`, "", scene.summary);
+      for (const shot of scene.shots) {
+        lines.push("", `##### ${shot.id} · ${shot.duration_seconds} 秒`, "", shot.h3_brief, "", `- 摄影：${shot.shot_size}；${shot.camera}`, `- 连续性进入：${shot.continuity_in}`, `- 连续性离开：${shot.continuity_out}`, `- 声音：${shot.sound}`, `- 配乐：${shot.music}`);
+        for (const beat of shot.beats) lines.push(`- ${beat.start_second}–${beat.end_second}s：${beat.action}`);
+        for (const line of shot.dialogue) lines.push(`- 对白 ${line.speaker_id}：${line.text}`);
+      }
+    }
+  }
+  lines.push("", "---", "由 H3 Flow 短剧模式生成；本文件是制片计划，不代表视频、参考资产或 ComfyUI 任务已经生成。", "");
+  return lines.join("\n");
+}
+
+function bindShortDrama() {
+  dramaElements.modes.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-mode]");
+    if (button) switchWorkspace(button.dataset.mode);
+  });
+  for (const field of dramaDraftFields) {
+    dramaElements[field].addEventListener("input", () => {
+      updateDramaScope();
+      queueDramaDraftSave();
+      if (dramaElements.error.textContent && dramaElements.theme.value.trim().length >= 12) dramaElements.error.textContent = "";
+    });
+    dramaElements[field].addEventListener("change", () => {
+      updateDramaScope();
+      queueDramaDraftSave();
+    });
+  }
+  dramaElements.form.addEventListener("submit", generateDramaPackage);
+  dramaElements.tabs.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-view]");
+    if (!button || !dramaState.package) return;
+    dramaState.view = button.dataset.view;
+    renderDramaView();
+  });
+  dramaElements.ledger.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-episode-index]");
+    if (!button || !dramaState.package) return;
+    dramaState.episodeIndex = Number(button.dataset.episodeIndex);
+    dramaState.view = "episodes";
+    renderDramaLedger();
+    renderDramaView();
+  });
+  dramaElements.view.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-shot-handoff]");
+    if (button) handoffDramaShot(Number(button.dataset.sceneIndex), Number(button.dataset.shotIndex));
+  });
+  dramaElements.exportJson.addEventListener("click", () => {
+    if (!dramaState.package) return;
+    downloadDramaFile(JSON.stringify(dramaState.package, null, 2), "application/json;charset=utf-8", safeDramaFilename("json"));
+    showToast("短剧制片包 JSON 已导出；未提交 ComfyUI");
+  });
+  dramaElements.exportMarkdown.addEventListener("click", () => {
+    if (!dramaState.package) return;
+    downloadDramaFile(dramaPackageMarkdown(dramaState.package), "text/markdown;charset=utf-8", safeDramaFilename("md"));
+    showToast("可阅读制片文档已导出；未提交 ComfyUI");
+  });
+}
+
+bindShortDrama();
+restoreDramaDraft();
+updateDramaScope();
+refreshDramaStatus();
+let initialWorkspaceMode = "video";
+try { initialWorkspaceMode = localStorage.getItem(WORKSPACE_MODE_KEY) || "video"; } catch { /* keep default */ }
+const requestedWorkspaceMode = new URLSearchParams(window.location.search).get("mode");
+if (["video", "drama"].includes(requestedWorkspaceMode)) initialWorkspaceMode = requestedWorkspaceMode;
+switchWorkspace(initialWorkspaceMode, { persist: false });
