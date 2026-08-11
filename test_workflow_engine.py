@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 
 from PIL import Image
@@ -58,6 +59,17 @@ class WorkflowEngineTests(unittest.TestCase):
             for value in node["inputs"].values():
                 if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
                     self.assertIn(value[0], workflow, f"{node_id} references missing node {value[0]}")
+
+    def test_creator_guidance_ui_keeps_drafts_local_without_api_keys(self) -> None:
+        root = Path(__file__).resolve().parent
+        html = (root / "index.html").read_text(encoding="utf-8")
+        javascript = (root / "app.js").read_text(encoding="utf-8")
+        for marker in ("studioSteps", "briefHealth", "beatBuilder", "preflightSummary", "mobileReviewDock"):
+            self.assertIn(f'id="{marker}"', html)
+        self.assertIn("h3-flow:creator-draft:v1", javascript)
+        draft_writer = javascript.split("function persistDraft()", 1)[1].split("function queueDraftSave()", 1)[0]
+        self.assertNotIn("assistantApiKey", draft_writer)
+        self.assertNotIn("api_key", draft_writer)
 
     def test_duration_is_split_into_verified_short_segments(self) -> None:
         for duration, expected_segments in ((5, 1), (10, 2), (15, 3), (30, 6)):

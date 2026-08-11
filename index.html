@@ -47,6 +47,12 @@
         <span class="brand__name">H3 Flow</span>
         <span class="brand__descriptor">自动工作流制片台</span>
       </a>
+      <nav class="studio-steps" id="studioSteps" aria-label="创作流程">
+        <button type="button" data-scroll-target="sceneSection" aria-current="step"><span>01</span><strong>创意简报</strong><i></i></button>
+        <button type="button" data-scroll-target="formatSection"><span>02</span><strong>分镜节拍</strong><i></i></button>
+        <button type="button" data-scroll-target="qualitySection"><span>03</span><strong>交付质量</strong><i></i></button>
+        <button type="button" data-scroll-target="planPanel"><span>04</span><strong>生成总检</strong><i></i></button>
+      </nav>
       <div class="appbar__actions">
         <span class="local-note">仅在本机运行</span>
         <button class="connection" id="connectionButton" type="button" aria-label="查看 ComfyUI 连接状态">
@@ -65,7 +71,7 @@
         </div>
 
         <form class="flow-form" id="flowForm" novalidate>
-          <section class="flow-section" aria-labelledby="sceneHeading">
+          <section class="flow-section" id="sceneSection" aria-labelledby="sceneHeading">
             <div class="section-index" aria-hidden="true">01</div>
             <div class="section-content">
               <div class="section-heading">
@@ -73,7 +79,11 @@
                   <h2 id="sceneHeading">描述你想看到的画面</h2>
                   <p>像给摄影师讲戏一样写；镜头、动作、光线和声音越明确，结果越稳定。</p>
                 </div>
-                <span class="field-count" id="promptCount">0 / 12000</span>
+                <div class="field-meta">
+                  <span class="draft-state" id="draftState">本机草稿</span>
+                  <button class="new-draft" id="newDraftButton" type="button">新建</button>
+                  <span class="field-count" id="promptCount">0 / 12000</span>
+                </div>
               </div>
               <label class="sr-only" for="prompt">视频提示词</label>
               <div class="prompt-shell">
@@ -84,12 +94,25 @@
                     <button type="button" data-template="commercial">产品广告</button>
                     <button type="button" data-template="portrait">人物表演</button>
                     <button type="button" data-template="atmosphere">氛围镜头</button>
+                    <button type="button" data-template="shortform">知识口播</button>
                   </div>
                   <button class="prompt-assistant-open" id="promptAssistantOpen" type="button">
                     <svg aria-hidden="true"><use href="#icon-spark"></use></svg>
                     <span><strong>AI 提示词编导</strong><small>按 H3 官方格式重写</small></span>
                   </button>
                 </div>
+              </div>
+              <div class="brief-health" id="briefHealth" aria-live="polite">
+                <div class="brief-health__header">
+                  <div><span>创意简报完整度</span><small id="briefGuidance">先写清主体与正在发生的动作</small></div>
+                  <strong id="briefScore">0 / 4</strong>
+                </div>
+                <ul id="briefChecks" aria-label="创意简报检查项">
+                  <li data-brief-check="subject"><i></i><span><strong>主体</strong><small>谁或什么是画面核心</small></span></li>
+                  <li data-brief-check="action"><i></i><span><strong>动作</strong><small>主体如何变化或移动</small></span></li>
+                  <li data-brief-check="camera"><i></i><span><strong>镜头</strong><small>景别、机位或运动方向</small></span></li>
+                  <li data-brief-check="sound"><i></i><span><strong>声音</strong><small>环境声、对白或配乐</small></span></li>
+                </ul>
               </div>
               <p class="field-error" id="promptError" role="alert"></p>
               <p class="timeline-hint" id="timelineHint" hidden></p>
@@ -123,7 +146,7 @@
             </div>
           </section>
 
-          <section class="flow-section" aria-labelledby="formatHeading">
+          <section class="flow-section" id="formatSection" aria-labelledby="formatHeading">
             <div class="section-index" aria-hidden="true">02</div>
             <div class="section-content">
               <div class="section-heading compact">
@@ -141,6 +164,25 @@
                   <button type="button" data-value="30"><strong>30</strong><span>秒</span></button>
                 </div>
               </fieldset>
+              <section class="beat-builder" id="beatBuilder" aria-labelledby="beatBuilderTitle" hidden>
+                <div class="beat-builder__header">
+                  <div>
+                    <span class="beat-builder__eyebrow">LONG VIDEO STORYBOARD</span>
+                    <h3 id="beatBuilderTitle">逐段写清，不再手敲时间码</h3>
+                    <p>每 5 秒只写这一段发生的新动作；系统会自动整理成可校验时间线。</p>
+                  </div>
+                  <strong id="beatProgress">0 / 0 段</strong>
+                </div>
+                <label class="continuity-brief" for="continuityBrief">
+                  <span><strong>全片连续要求</strong><small>可选，只写跨段不变的事实</small></span>
+                  <textarea id="continuityBrief" rows="2" maxlength="1200" placeholder="例如：同一位成年咖啡师、深色围裙、清晨冷光；环境雨声持续，不要配乐。"></textarea>
+                </label>
+                <div class="beat-rows" id="beatRows"></div>
+                <div class="beat-builder__actions">
+                  <p id="beatBuilderHint">补完所有片段后，才能写入主提示词并通过长视频门禁。</p>
+                  <button id="applyBeats" type="button" disabled>写入长视频简报</button>
+                </div>
+              </section>
               <fieldset class="control-group control-group--inline">
                 <legend>画面比例</legend>
                 <div class="segmented segmented--aspect" id="aspectControl">
@@ -149,10 +191,11 @@
                   <button type="button" data-value="1:1"><span class="ratio ratio--square"></span>方形 1:1</button>
                 </div>
               </fieldset>
+              <p class="format-note" id="formatNote">横屏 16:9 · 适合叙事短片、展示页与大屏观看</p>
             </div>
           </section>
 
-          <section class="flow-section" aria-labelledby="qualityHeading">
+          <section class="flow-section" id="qualitySection" aria-labelledby="qualityHeading">
             <div class="section-index" aria-hidden="true">03</div>
             <div class="section-content">
               <div class="section-heading compact">
@@ -195,13 +238,22 @@
         </form>
       </section>
 
-      <aside class="plan-panel" aria-labelledby="planTitle">
+      <aside class="plan-panel" id="planPanel" aria-labelledby="planTitle">
         <div class="plan-panel__header">
           <div>
             <p class="eyebrow eyebrow--dark">LIVE SAFETY PLAN</p>
             <h2 id="planTitle">你的执行方案</h2>
           </div>
           <span class="safety-state" id="safetyState"><span></span>正在分析</span>
+        </div>
+
+        <div class="preflight-summary" id="preflightSummary" aria-live="polite">
+          <div>
+            <span>生成前总检</span>
+            <strong id="preflightLabel">正在读取本机环境</strong>
+            <p id="preflightDetail">系统会把创意、片段、模型、队列和显存结果合并成一个明确结论。</p>
+          </div>
+          <button id="fixPlanButton" type="button" hidden>回到待修项</button>
         </div>
 
         <div class="timeline-card">
@@ -224,35 +276,44 @@
           <div><dt>同步声音</dt><dd>原生立体声</dd></div>
         </dl>
 
-        <div class="resource-card">
-          <div class="resource-card__title">
-            <span>本机资源</span>
-            <button id="refreshStatus" type="button">重新检测</button>
-          </div>
-          <div class="resource-row">
-            <div class="resource-row__label"><span>GPU</span><strong id="gpuValue">检测中</strong></div>
-            <div class="resource-meter"><span id="gpuMeter"></span><i></i></div>
-            <small id="gpuNote">为工作流保留 1.5GB</small>
-          </div>
-          <div class="resource-row">
-            <div class="resource-row__label"><span>系统提交</span><strong id="ramValue">检测中</strong></div>
-            <div class="resource-meter"><span id="ramMeter"></span><i></i></div>
-            <small id="ramNote">长视频解码缓冲区</small>
-          </div>
-        </div>
+        <details class="technical-plan" id="technicalPlan">
+          <summary>
+            <span><strong>本机与技术细节</strong><small>显存、提交空间、模型与版本</small></span>
+            <span id="technicalState">环境读取中</span>
+            <svg><use href="#icon-chevron"></use></svg>
+          </summary>
+          <div class="technical-plan__body">
+            <div class="resource-card">
+              <div class="resource-card__title">
+                <span>本机资源</span>
+                <button id="refreshStatus" type="button">重新检测</button>
+              </div>
+              <div class="resource-row">
+                <div class="resource-row__label"><span>GPU</span><strong id="gpuValue">检测中</strong></div>
+                <div class="resource-meter"><span id="gpuMeter"></span><i></i></div>
+                <small id="gpuNote">为工作流保留 1.5GB</small>
+              </div>
+              <div class="resource-row">
+                <div class="resource-row__label"><span>系统提交</span><strong id="ramValue">检测中</strong></div>
+                <div class="resource-meter"><span id="ramMeter"></span><i></i></div>
+                <small id="ramNote">长视频解码缓冲区</small>
+              </div>
+            </div>
 
-        <div class="compatibility-card" id="compatibilityCard" aria-live="polite">
-          <div class="compatibility-card__title">
-            <span>环境基线</span>
-            <strong id="compatibilityState">检测中</strong>
+            <div class="compatibility-card" id="compatibilityCard" aria-live="polite">
+              <div class="compatibility-card__title">
+                <span>环境基线</span>
+                <strong id="compatibilityState">检测中</strong>
+              </div>
+              <dl class="compatibility-list">
+                <div><dt>运行时</dt><dd id="runtimeCompatibility">读取中</dd></div>
+                <div><dt>核心模型</dt><dd id="baseCompatibility">读取中</dd></div>
+                <div><dt>多参考</dt><dd id="referenceCompatibility">读取中</dd></div>
+                <div><dt>潜空间续接</dt><dd id="continuityCompatibility">读取中</dd></div>
+              </dl>
+            </div>
           </div>
-          <dl class="compatibility-list">
-            <div><dt>运行时</dt><dd id="runtimeCompatibility">读取中</dd></div>
-            <div><dt>核心模型</dt><dd id="baseCompatibility">读取中</dd></div>
-            <div><dt>多参考</dt><dd id="referenceCompatibility">读取中</dd></div>
-            <div><dt>潜空间续接</dt><dd id="continuityCompatibility">读取中</dd></div>
-          </dl>
-        </div>
+        </details>
 
         <div class="plan-notice" id="planNotice" hidden>
           <svg><use href="#icon-spark"></use></svg>
@@ -279,6 +340,11 @@
         </div>
       </aside>
     </main>
+
+    <div class="mobile-review-dock" id="mobileReviewDock">
+      <div><span>生成前总检</span><strong id="mobileReviewState">正在分析</strong></div>
+      <button id="mobileReviewButton" type="button">查看方案</button>
+    </div>
 
     <dialog class="assistant-dialog" id="promptAssistantDialog" aria-labelledby="assistantTitle">
       <div class="assistant-dialog__shell">

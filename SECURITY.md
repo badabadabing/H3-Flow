@@ -17,4 +17,6 @@ Please use GitHub's private vulnerability reporting feature in the repository Se
 - Reference uploads validate MIME type, decoded image format, dimensions, pixel count, and size before forwarding to ComfyUI.
 - Prompt-provider URLs reject embedded credentials, query strings, fragments, and remote plain HTTP. Plain HTTP is accepted only for loopback OpenAI-compatible services.
 - Prompt-provider error handling returns a bounded upstream message and never returns the submitted API key.
+- Browser draft persistence uses a single versioned localStorage key and deliberately excludes API keys, reference-image data, filesystem paths, hardware details, model inventories, and generated media.
+- Starting a new creator draft clears only that localStorage entry and the visible form; it never deletes ComfyUI inputs or outputs.
 - Never paste an API key into a public issue, commit, screenshot, workflow JSON, or shared terminal transcript.

@@ -2,7 +2,7 @@
 
 H3 Flow 是一个面向普通创作者的本地 MiniMax H3 工作流前端。用户只需要填写提示词、选择时长与质量，并按用途上传参考图；H3 Flow 会连接本机 ComfyUI，检查硬件、模型、节点、插件和版本，再生成或提交可验证的 API 工作流。
 
-[English](README.en.md) · [H3 提示词编导](docs/prompt-assistant.md) · [兼容性契约](docs/compatibility.md) · [长视频研究与边界](docs/continuity.md) · [安全策略](SECURITY.md) · [隐私说明](PRIVACY.md)
+[English](README.en.md) · [100 名创作者合成审计](docs/creator-cohort-audit.md) · [H3 提示词编导](docs/prompt-assistant.md) · [兼容性契约](docs/compatibility.md) · [长视频研究与边界](docs/continuity.md) · [安全策略](SECURITY.md) · [隐私说明](PRIVACY.md)
 
 ## 当前能力
 
@@ -10,6 +10,9 @@ H3 Flow 是一个面向普通创作者的本地 MiniMax H3 工作流前端。用
 - 首帧图生视频：参考图真实连接到 `LoadImage → ImageScale → MiniMaxH3ImageToVideo.first_frame`。
 - 身份 / 风格参考：使用独立 Ref2VA 权重和 `MiniMaxH3ReferenceToVideo`；当前 UI 开放单图、5 秒安全档。
 - AI 提示词编导：按 MiniMax H3 官方 Base / Ref2VA 指引生成结构化提示词；默认支持 DeepSeek，也可以填写其他 OpenAI-compatible 云端或本机接口。
+- 创作引导：主体 / 动作 / 镜头 / 声音四项简报检查，10–30 秒可视化 5 秒分镜编排，无需手写时间码。
+- 本机草稿：自动保存提示词、时长、比例、质量与分镜；API Key、参考图、硬件信息不会写入草稿。
+- 统一生成前总检：把创意缺项、长视频时间线、模型、版本、显存和队列问题合并成可返回修正的检查结果。
 - 5、10、15、30 秒安全计划；长视频基础模式按 124 帧短片段生成并使用上一段末帧续接。
 - 480P 原生预览、720P 成片和受硬件门禁保护的 SeedVR2 1080P 精修。
 - 环境基线检测：ComfyUI、前端、工作流模板、Python、PyTorch、模型文件、节点以及可选潜空间续接插件。
@@ -50,7 +53,7 @@ py -3 -m pip install -r requirements.txt
 
 提示词编导的 API Key 可以直接在页面里填写，仅保留到页面关闭；也可以在启动前设置 `H3_FLOW_LLM_BASE_URL`、`H3_FLOW_LLM_MODEL` 和 `H3_FLOW_LLM_API_KEY`。详细格式和隐私边界见 [docs/prompt-assistant.md](docs/prompt-assistant.md)。
 
-默认 5 秒档可以直接写完整场景。选择 10、15 或 30 秒时，请按每 5 秒写满时间线；缺少任一后续时间段时，界面会在排队前阻止生成。例如：
+默认 5 秒档可以直接写完整场景。选择 10、15 或 30 秒时，可以在“逐段写清”区域填写每个 5 秒剧情段，H3 Flow 会自动编译时间码并检查完整性；也可以直接粘贴已有的完整时间线。缺少任一后续时间段时，界面会在排队前阻止生成。例如：
 
 ```text
 0-5秒：人物从床边起身，走向宫门。
