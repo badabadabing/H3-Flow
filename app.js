@@ -1,5 +1,5 @@
 const state = {
-  duration: 10,
+  duration: 5,
   aspect: "16:9",
   quality: "balanced",
   reference: null,
@@ -35,6 +35,7 @@ const elements = {
   prompt: $("#prompt"),
   promptCount: $("#promptCount"),
   promptError: $("#promptError"),
+  timelineHint: $("#timelineHint"),
   referenceInput: $("#referenceInput"),
   uploadButton: $("#uploadButton"),
   uploadEmpty: $("#uploadEmpty"),
@@ -100,6 +101,7 @@ function currentConfig() {
     reference: state.reference?.token || null,
     reference_mode: state.referenceMode,
     seed: elements.seed.value || null,
+    prompt: elements.prompt.value.trim(),
   };
 }
 
@@ -194,6 +196,10 @@ function renderPlan(plan) {
   }
   elements.segmentLabel.textContent = `${plan.segments} 个安全片段`;
   elements.durationLabel.textContent = formatClock(plan.duration);
+  elements.timelineHint.hidden = plan.duration <= 5;
+  elements.timelineHint.textContent = plan.duration <= 5
+    ? ""
+    : `长视频请按每 5 秒写完整时间段，例如 0-5秒、5-10秒，直到 ${plan.duration} 秒。系统会把每段剧情隔离后再续接。`;
   elements.modeValue.textContent = plan.workflow_mode;
   elements.continuityValue.textContent = plan.continuity_mode;
   elements.sourceValue.textContent = plan.source_resolution;
@@ -524,6 +530,7 @@ function bindControls() {
     if (elements.promptError.textContent && elements.prompt.value.trim().length >= 12) {
       elements.promptError.textContent = "";
     }
+    schedulePlan();
   });
 
   for (const button of $$('[data-template]')) {

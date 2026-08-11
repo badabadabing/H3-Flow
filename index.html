@@ -88,6 +88,7 @@
                 </div>
               </div>
               <p class="field-error" id="promptError" role="alert"></p>
+              <p class="timeline-hint" id="timelineHint" hidden></p>
 
               <div class="reference-block">
                 <div class="reference-copy">
@@ -124,14 +125,14 @@
               <div class="section-heading compact">
                 <div>
                   <h2 id="formatHeading">决定成片节奏</h2>
-                  <p>时长越长，系统会拆成更多安全片段并自动续接。</p>
+                  <p>时长越长，系统会拆成更多安全片段；长视频需要为每 5 秒写明剧情时间段。</p>
                 </div>
               </div>
               <fieldset class="control-group">
                 <legend>视频时长</legend>
                 <div class="segmented segmented--duration" id="durationControl">
-                  <button type="button" data-value="5"><strong>5</strong><span>秒</span></button>
-                  <button type="button" data-value="10" class="is-selected"><strong>10</strong><span>秒</span></button>
+                  <button type="button" data-value="5" class="is-selected"><strong>5</strong><span>秒</span></button>
+                  <button type="button" data-value="10"><strong>10</strong><span>秒</span></button>
                   <button type="button" data-value="15"><strong>15</strong><span>秒</span></button>
                   <button type="button" data-value="30"><strong>30</strong><span>秒</span></button>
                 </div>
@@ -202,12 +203,12 @@
         <div class="timeline-card">
           <div class="timeline-card__header">
             <span>生成路径</span>
-            <strong id="segmentLabel">2 个安全片段</strong>
+            <strong id="segmentLabel">1 个安全片段</strong>
           </div>
           <div class="segment-track" id="segmentTrack" aria-label="视频片段计划"></div>
           <div class="timeline-card__footer">
             <span>00:00</span>
-            <span id="durationLabel">00:10</span>
+            <span id="durationLabel">00:05</span>
           </div>
         </div>
 

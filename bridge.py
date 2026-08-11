@@ -400,6 +400,17 @@ def build_plan(raw: dict[str, Any], snapshot: dict[str, Any] | None = None) -> d
         blockers.append("缺少所需模型：" + "、".join(missing_core))
     if config["reference_mode"] == "identity" and config["duration"] > 5:
         blockers.append("多参考 Ref2VA 当前只开放已验证的 5 秒档；长视频需完成潜空间续接实载验收后再开放")
+    if config["duration"] > 5:
+        prompt_text = str(raw.get("prompt") or "").strip()
+        try:
+            compile_segment_series(
+                prompt_text,
+                segment_seconds=config["duration"] / segments,
+                total_seconds=float(config["duration"]),
+                first_has_reference=bool(config["reference"]),
+            )
+        except ValueError as exc:
+            blockers.append("长视频剧情时间线：" + str(exc))
     if comfy["queue_running"] or comfy["queue_pending"]:
         blockers.append("ComfyUI 当前有任务，需等待队列清空以避免资源争抢")
 
@@ -457,7 +468,7 @@ def build_workflow(prompt_text: str, raw: dict[str, Any], snapshot: dict[str, An
     if len(prompt_text) > 12000:
         raise ValueError("提示词过长，最多 12000 个字符")
 
-    plan = build_plan(raw, snapshot=snapshot)
+    plan = build_plan({**raw, "prompt": prompt_text}, snapshot=snapshot)
     width, height = ASPECTS[plan["aspect"]]["source"]
     identity_mode = plan["reference_mode"] == "identity"
     h3_model_name = (

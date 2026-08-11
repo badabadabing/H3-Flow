@@ -139,6 +139,29 @@ class WorkflowEngineTests(unittest.TestCase):
         self.assertIn("资源争抢", "".join(plan["blockers"]))
         self.assertEqual(plan["output_resolution"], "640×640")
 
+    def test_long_plan_blocks_ambiguous_story_before_queue(self) -> None:
+        plan = bridge.build_plan(
+            {"duration": 10, "aspect": "16:9", "quality": "draft", "prompt": self.prompt},
+            snapshot=ready_snapshot(),
+        )
+        self.assertFalse(plan["ready"])
+        self.assertIn("剧情时间线", "".join(plan["blockers"]))
+        self.assertIn("时间段", "".join(plan["blockers"]))
+        self.assertIn("0-5秒", "".join(plan["blockers"]))
+
+    def test_long_plan_accepts_isolated_timecoded_story(self) -> None:
+        plan = bridge.build_plan(
+            {
+                "duration": 10,
+                "aspect": "16:9",
+                "quality": "draft",
+                "prompt": self.timed_prompt(10),
+            },
+            snapshot=ready_snapshot(),
+        )
+        self.assertTrue(plan["ready"])
+        self.assertEqual(plan["continuity_mode"], "末帧续接 + 剧情时间段隔离")
+
     def test_invalid_seed_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "随机种子无效"):
             bridge.normalize_config({"duration": 5, "seed": "not-a-number"})

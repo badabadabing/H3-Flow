@@ -385,6 +385,15 @@ textarea::placeholder {
   font-size: 12px;
 }
 
+.timeline-hint {
+  margin: 7px 2px 0;
+  padding-left: 10px;
+  color: var(--ink-soft);
+  border-left: 2px solid var(--accent);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
 .reference-block {
   display: grid;
   grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 1.1fr);

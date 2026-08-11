@@ -22,6 +22,7 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - [x] Tested runtime, model sizes/hashes, capability nodes, and optional motion-context plugin baseline recorded.
 - [x] Long-video baseline is labelled pixel last-frame chaining rather than seamless latent continuation.
 - [x] Time-coded master prompts are compiled into isolated per-segment story beats; missing later beats stop before sampling.
+- [x] Five seconds is the safe default; 10–30 second prompts are preflighted live and blocked until every five-second story beat is present.
 - [ ] First-and-last-frame UI.
 - [ ] Multi-image Ref2VA UI and tag assistant.
 - [ ] Motion-context plugin security audit, installation by user, GPU validation, seam metrics, and release gate.
@@ -29,7 +30,7 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 
 ## Verification evidence
 
-- 12 workflow-engine unit tests pass.
+- 15 workflow-engine unit tests pass.
 - Live ComfyUI 0.31.1 reports base and Ref2VA capabilities ready.
 - Exported first-frame I2V workflow: 21 nodes, zero live-schema errors.
 - Exported identity/style Ref2VA workflow: 20 nodes, zero live-schema errors.

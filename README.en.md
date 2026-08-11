@@ -15,4 +15,6 @@ py -3 -m pip install -r requirements.txt
 
 Open `http://127.0.0.1:4173` after ComfyUI is running.
 
+The default five-second mode accepts one complete scene prompt. For 10, 15, or 30 seconds, provide every five-second beat explicitly, for example `0-5s: ...` and `5-10s: ...`. H3 Flow preflights the timeline and blocks submission when a later beat is missing.
+
 H3 Flow is MIT-licensed. Model weights, ComfyUI, and third-party plugins are not included and remain subject to their respective licenses.
