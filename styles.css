@@ -2717,3 +2717,164 @@ textarea::placeholder {
     width: 100%;
   }
 }
+
+/* Desktop cockpit: keep the full working frame inside the viewport. */
+@media (min-width: 1181px) {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  .workspace {
+    height: calc(100vh - 68px);
+    width: min(1540px, calc(100% - 48px));
+    gap: clamp(24px, 2.6vw, 44px);
+    padding: 20px 0;
+    align-items: stretch;
+  }
+
+  .creator {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .hero-copy {
+    grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
+    grid-template-areas:
+      "eyebrow body"
+      "title body";
+    align-items: end;
+    gap: 5px 30px;
+    padding: 0 4px 16px;
+  }
+
+  .hero-copy .eyebrow {
+    grid-area: eyebrow;
+    margin: 0;
+  }
+
+  .hero-copy h1 {
+    grid-area: title;
+    font-size: clamp(38px, 3.3vw, 56px);
+    line-height: 0.98;
+    letter-spacing: -0.06em;
+  }
+
+  .hero-copy h1 br {
+    display: none;
+  }
+
+  .hero-copy h1 span {
+    font-size: 1em;
+    white-space: normal;
+  }
+
+  .hero-copy__body {
+    grid-area: body;
+    align-self: center;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .flow-form,
+  .plan-panel {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+
+  .flow-form {
+    box-shadow: 0 18px 50px rgba(31, 33, 28, 0.08);
+  }
+
+  .plan-panel {
+    position: relative;
+    top: auto;
+    height: 100%;
+    padding: 18px 20px;
+    box-shadow: 0 22px 58px rgba(17, 19, 16, 0.2);
+  }
+
+  .plan-panel h2 {
+    margin-top: 4px;
+    font-size: 22px;
+  }
+
+  .preflight-summary {
+    padding: 11px 12px;
+  }
+
+  .timeline-card {
+    margin-top: 15px;
+    padding: 13px 14px;
+  }
+
+  .segment-track {
+    height: 34px;
+    margin: 10px 0 6px;
+  }
+
+  .plan-specs {
+    margin-top: 10px;
+  }
+
+  .plan-specs > div {
+    padding: 8px 2px;
+  }
+
+  .technical-plan > summary {
+    min-height: 50px;
+    padding: 0 13px;
+  }
+
+  .blocker-list {
+    gap: 5px;
+    margin-top: 10px;
+  }
+
+  .blocker-list p {
+    padding: 7px 9px;
+    line-height: 1.4;
+  }
+
+  .protection-list {
+    margin-top: 12px;
+  }
+
+  .protection-list > p {
+    margin-bottom: 6px;
+  }
+
+  .protection-list ul {
+    gap: 4px;
+  }
+
+  .protection-list li {
+    line-height: 1.35;
+  }
+
+  .plan-actions {
+    margin-top: 14px;
+  }
+
+  .primary-action {
+    min-height: 48px;
+  }
+
+  .secondary-action {
+    min-height: 36px;
+    margin-top: 6px;
+  }
+
+  .plan-actions p {
+    margin-top: 6px;
+  }
+}

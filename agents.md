@@ -50,3 +50,13 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - Desktop and mobile browser flows were exercised against the live local bridge. A complete 30-second six-beat story survived reload and passed the timecode gate; the only remaining blocker was the existing ComfyUI queue.
 - No generation request was submitted and no `/prompt` call was made during this audit. The existing ComfyUI job was left untouched.
 - Follow-up opportunities remain: provider connection testing, validated multi-image Ref2VA labelling, and generation history with seed variants and per-segment retry.
+
+## Desktop viewport-density repair — 2026-08-12
+
+- At 2048×1027 the sticky plan was 952px tall but had only 855px from its sticky top to the viewport bottom; `overflow: visible` made the final actions permanently unreachable by page scrolling.
+- Desktop widths from 1181px now use a single-screen cockpit below the 68px app bar. The hero is a compact two-column introduction, while the creator form and safety plan own bounded internal scrolling.
+- The plan no longer relies on sticky positioning in cockpit mode. Timeline, specs, blockers, protection copy, and actions use a tighter rhythm without reducing the established text sizes or touch targets below their existing system.
+- At 2048×1027 the document height equals 1027px and the plan is fully visible from y=88 to y=1007; its 917px client height equals its 917px scroll height in the collapsed state.
+- At 1440×900 the plan is fully visible from y=88 to y=880. With technical details expanded, 186px of internal overflow remains reachable and the action area reaches the bottom correctly.
+- The creator form reaches its quality section at its maximum internal scroll. The 390×844 layout retains normal page scrolling and the mobile preflight dock.
+- Isolated current-code browser verification produced zero console errors or warnings and made no `/prompt` request.
