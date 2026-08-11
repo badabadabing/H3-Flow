@@ -26,6 +26,8 @@ from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
+from prompt_assistant import prompt_assistant_status, rewrite_h3_prompt
+
 
 STATIC_ROOT = Path(__file__).resolve().parent
 PARENT_PROJECT = STATIC_ROOT.parent
@@ -926,6 +928,9 @@ class H3FlowHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/compatibility":
             self.send_json(environment_snapshot(force=True)["compatibility"])
             return
+        if parsed.path == "/api/prompt-assistant":
+            self.send_json(prompt_assistant_status())
+            return
         if parsed.path.startswith("/api/job/"):
             prompt_id = parsed.path.rsplit("/", 1)[-1]
             try:
@@ -971,6 +976,9 @@ class H3FlowHandler(BaseHTTPRequestHandler):
                 return
             if self.path == "/api/upload":
                 self.send_json({"reference": upload_reference(payload)}, 201)
+                return
+            if self.path == "/api/prompt-assistant":
+                self.send_json(rewrite_h3_prompt(payload))
                 return
             if self.path == "/api/start":
                 if not START_SCRIPT.is_file():

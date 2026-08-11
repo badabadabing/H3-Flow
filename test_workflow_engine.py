@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import unittest
 from io import BytesIO
+from unittest.mock import patch
 
 from PIL import Image
 
 import bridge
+import prompt_assistant
 
 
 def ready_snapshot(vram: float = 16.0) -> dict:
@@ -216,6 +218,109 @@ class WorkflowEngineTests(unittest.TestCase):
         self.assertEqual(bridge.validate_reference_image(buffer.getvalue(), "image/png"), (64, 48))
         with self.assertRaisesRegex(ValueError, "有效图片"):
             bridge.validate_reference_image(b"not an image", "image/png")
+
+    def test_prompt_assistant_uses_official_i2va_alignment(self) -> None:
+        messages, request = prompt_assistant.build_messages(
+            {
+                "brief": self.prompt,
+                "duration": 5,
+                "aspect": "16:9",
+                "reference_mode": "first_frame",
+            }
+        )
+        self.assertEqual(request["reference_mode"], "first_frame")
+        self.assertIn(prompt_assistant.I2VA_ALIGNMENT, messages[1]["content"])
+        self.assertIn("three fields must appear exactly once", messages[0]["content"])
+
+    def test_prompt_assistant_rejects_insecure_remote_http(self) -> None:
+        with self.assertRaisesRegex(ValueError, "必须使用 HTTPS"):
+            prompt_assistant._resolve_config(
+                {"base_url": "http://example.com/v1", "model": "custom-model", "api_key": "secret"}
+            )
+
+    def test_prompt_assistant_status_never_returns_environment_key(self) -> None:
+        with patch.dict(
+            prompt_assistant.os.environ,
+            {"H3_FLOW_LLM_API_KEY": "private-test-key", "H3_FLOW_LLM_MODEL": "deepseek-v4-flash"},
+            clear=False,
+        ):
+            status = prompt_assistant.prompt_assistant_status()
+        self.assertTrue(status["environment_configured"])
+        self.assertNotIn("private-test-key", str(status))
+
+    def test_prompt_assistant_validates_full_reference_format(self) -> None:
+        request = {"duration": 5, "reference_mode": "identity"}
+        generated = """subject_definitions:
+<Subject 1> is the primary product in <Picture 1>, preserving only the identity stated by the user.
+summary:
+[reference generation] The target shows <Subject 1> in one continuous product shot.
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - the requested product identity remains consistent.
+detailed_description:
+The target video uses a live-action cinematic product style with controlled side lighting.
+[Shot 1] A medium-wide static shot holds <Subject 1> at the center while the light moves gradually across its surface and the camera pushes in with small amplitude at slow speed.
+overall_soundscape:
+Quiet indoor room tone and a soft mechanical camera movement continue throughout the shot.
+non_diegetic_music:
+N/A"""
+        checks = prompt_assistant.validate_generated_prompt(generated, request)
+        self.assertEqual(checks[0], "subject_definitions")
+        self.assertEqual(checks[-1], "non_diegetic_music")
+
+    def test_prompt_assistant_requires_every_long_video_beat(self) -> None:
+        request = {"duration": 10, "reference_mode": "none"}
+        generated = """integrated_multimodal_description:
+0-5s: [Shot 1] Live-action, cinematic, a tracking shot follows an adult walking through a quiet hall while the camera pushes in with small amplitude at slow speed. The subject reaches the first doorway and pauses with a stable posture.
+overall_soundscape:
+Soft footsteps and steady indoor room tone continue under faint fabric movement.
+non_diegetic_music:
+N/A"""
+        with self.assertRaisesRegex(ValueError, "5-10"):
+            prompt_assistant.validate_generated_prompt(generated, request)
+
+    def test_prompt_assistant_calls_openai_compatible_api_without_leaking_key(self) -> None:
+        generated = """integrated_multimodal_description: [Shot 1] Live-action, cinematic, a medium-wide shot frames an adult walking through a rain-lit station. The camera tracks the subject at slow speed while clothing, lighting, movement direction, and spatial relationships remain consistent until the subject stops beside the final doorway.
+overall_soundscape: Rain taps the glass while distant trains, measured footsteps, and soft fabric movement remain synchronized with the action.
+non_diegetic_music: Sparse piano notes at a slow tempo with sustained low strings that gradually decrease in volume."""
+        response_payload = {
+            "model": "custom-model",
+            "choices": [{"message": {"content": generated}}],
+            "usage": {"prompt_tokens": 20, "completion_tokens": 40, "total_tokens": 60},
+        }
+        captured: dict[str, str] = {}
+
+        class FakeResponse(BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                self.close()
+                return False
+
+        def fake_urlopen(request, timeout=0):
+            captured["authorization"] = request.headers.get("Authorization", "")
+            captured["url"] = request.full_url
+            self.assertEqual(timeout, 90)
+            return FakeResponse(prompt_assistant.json.dumps(response_payload).encode("utf-8"))
+
+        with patch.object(prompt_assistant.urllib.request, "urlopen", side_effect=fake_urlopen):
+            result = prompt_assistant.rewrite_h3_prompt(
+                {
+                    "brief": self.prompt,
+                    "duration": 5,
+                    "aspect": "16:9",
+                    "reference_mode": "none",
+                    "api_config": {
+                        "base_url": "https://llm.example.com/v1",
+                        "model": "custom-model",
+                        "api_key": "private-test-key",
+                    },
+                }
+            )
+        self.assertEqual(captured["authorization"], "Bearer private-test-key")
+        self.assertEqual(captured["url"], "https://llm.example.com/v1/chat/completions")
+        self.assertEqual(result["prompt"], generated)
+        self.assertNotIn("private-test-key", str(result))
 
 
 if __name__ == "__main__":

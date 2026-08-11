@@ -10,6 +10,8 @@ const state = {
   busy: false,
   promptId: null,
   pollTimer: null,
+  assistantStatus: null,
+  assistantBusy: false,
 };
 
 const templates = {
@@ -36,6 +38,22 @@ const elements = {
   promptCount: $("#promptCount"),
   promptError: $("#promptError"),
   timelineHint: $("#timelineHint"),
+  promptAssistantOpen: $("#promptAssistantOpen"),
+  promptAssistantDialog: $("#promptAssistantDialog"),
+  promptAssistantClose: $("#promptAssistantClose"),
+  promptAssistantCancel: $("#promptAssistantCancel"),
+  promptAssistantGenerate: $("#promptAssistantGenerate"),
+  promptAssistantGenerateText: $("#promptAssistantGenerateText"),
+  assistantContext: $("#assistantContext"),
+  assistantBriefPreview: $("#assistantBriefPreview"),
+  assistantEnvironmentState: $("#assistantEnvironmentState"),
+  assistantProviderSwitch: $("#assistantProviderSwitch"),
+  assistantBaseUrl: $("#assistantBaseUrl"),
+  assistantModel: $("#assistantModel"),
+  assistantApiKey: $("#assistantApiKey"),
+  assistantKeyState: $("#assistantKeyState"),
+  assistantError: $("#assistantError"),
+  assistantGuideState: $("#assistantGuideState"),
   referenceInput: $("#referenceInput"),
   uploadButton: $("#uploadButton"),
   uploadEmpty: $("#uploadEmpty"),
@@ -336,6 +354,137 @@ function setPrompt(text) {
   elements.prompt.focus();
 }
 
+function effectiveReferenceMode() {
+  if (!state.reference) return "none";
+  return state.referenceMode;
+}
+
+function assistantModeLabel() {
+  const mode = effectiveReferenceMode();
+  if (mode === "identity") return "Ref2VA 身份 / 风格参考";
+  if (mode === "first_frame") return "I2VA 首帧图生视频";
+  return "T2VA 文生视频";
+}
+
+function setAssistantProvider(provider) {
+  for (const button of elements.assistantProviderSwitch.querySelectorAll("button[data-provider]")) {
+    const selected = button.dataset.provider === provider;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  if (provider === "deepseek") {
+    elements.assistantBaseUrl.value = "https://api.deepseek.com";
+    elements.assistantModel.value = "deepseek-v4-flash";
+  }
+}
+
+async function refreshPromptAssistantStatus() {
+  try {
+    state.assistantStatus = await api("/api/prompt-assistant");
+    elements.assistantBaseUrl.value = state.assistantStatus.default_base_url;
+    elements.assistantModel.value = state.assistantStatus.default_model;
+    const isDeepSeek = state.assistantStatus.provider === "DeepSeek";
+    setAssistantProvider(isDeepSeek ? "deepseek" : "custom");
+    elements.assistantBaseUrl.value = state.assistantStatus.default_base_url;
+    elements.assistantModel.value = state.assistantStatus.default_model;
+    elements.assistantEnvironmentState.textContent = state.assistantStatus.environment_configured
+      ? `${state.assistantStatus.provider} 已由启动环境配置`
+      : "Key 由你填写，也可以改用其他兼容服务";
+    elements.assistantKeyState.textContent = state.assistantStatus.environment_configured
+      ? "启动环境已配置"
+      : "仅保留到关闭页面";
+    elements.assistantApiKey.placeholder = state.assistantStatus.environment_configured
+      ? "留空即可使用启动环境中的 Key"
+      : "由你自行填写，不写入项目";
+    elements.assistantGuideState.textContent = `MiniMax H3 官方指引 · ${state.assistantStatus.guide_revision.slice(0, 8)}`;
+  } catch (error) {
+    elements.assistantEnvironmentState.textContent = "本地提示词编导状态读取失败";
+    elements.assistantError.textContent = error.message;
+  }
+}
+
+function openPromptAssistant() {
+  const brief = elements.prompt.value.trim();
+  elements.assistantContext.textContent = `${state.duration} 秒 · ${state.aspect} · ${assistantModeLabel()}`;
+  elements.assistantBriefPreview.textContent = brief || "请先在主编辑器里写下画面创意。";
+  elements.assistantBriefPreview.classList.toggle("is-empty", !brief);
+  elements.assistantError.textContent = "";
+  elements.promptAssistantGenerate.disabled = brief.length < 12;
+  elements.promptAssistantDialog.showModal();
+  document.body.style.overflow = "hidden";
+  if (!state.assistantStatus) refreshPromptAssistantStatus();
+}
+
+function closePromptAssistant() {
+  if (elements.promptAssistantDialog.open) elements.promptAssistantDialog.close();
+  document.body.style.overflow = "";
+  elements.assistantError.textContent = "";
+}
+
+function setAssistantBusy(busy) {
+  state.assistantBusy = busy;
+  elements.promptAssistantGenerate.disabled = busy;
+  elements.promptAssistantClose.disabled = busy;
+  elements.promptAssistantCancel.disabled = busy;
+  elements.promptAssistantGenerate.classList.toggle("is-loading", busy);
+  elements.promptAssistantGenerateText.textContent = busy ? "正在编排镜头与声轨" : "生成官方格式提示词";
+}
+
+async function generateOfficialPrompt() {
+  const brief = elements.prompt.value.trim();
+  if (brief.length < 12) {
+    elements.assistantError.textContent = "请先在主编辑器里写至少 12 个字符的创意描述。";
+    return;
+  }
+  const baseUrl = elements.assistantBaseUrl.value.trim();
+  const model = elements.assistantModel.value.trim();
+  let providerUrl;
+  try {
+    providerUrl = new URL(baseUrl);
+  } catch {
+    elements.assistantError.textContent = "请填写有效的模型服务地址。";
+    return;
+  }
+  const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]"]);
+  const isLoopback = loopbackHosts.has(providerUrl.hostname);
+  if (providerUrl.protocol === "http:" && !isLoopback) {
+    elements.assistantError.textContent = "远程模型服务必须使用 HTTPS；HTTP 仅允许本机地址。";
+    return;
+  }
+  if (!model) {
+    elements.assistantError.textContent = "请填写模型名称。";
+    return;
+  }
+  if (!elements.assistantApiKey.value.trim() && !state.assistantStatus?.environment_configured && !isLoopback) {
+    elements.assistantError.textContent = "远程模型服务需要 API Key；Key 仅用于本次请求，不会写入项目。";
+    return;
+  }
+  elements.assistantError.textContent = "";
+  setAssistantBusy(true);
+  try {
+    const result = await post("/api/prompt-assistant", {
+      brief,
+      duration: state.duration,
+      aspect: state.aspect,
+      reference_mode: effectiveReferenceMode(),
+      api_config: {
+        base_url: baseUrl,
+        model,
+        api_key: elements.assistantApiKey.value.trim(),
+      },
+    });
+    elements.prompt.value = result.prompt;
+    elements.prompt.dispatchEvent(new Event("input", { bubbles: true }));
+    closePromptAssistant();
+    const tokens = result.usage?.total_tokens ? ` · ${result.usage.total_tokens} tokens` : "";
+    showToast(`${result.provider} 已按 H3 官方结构完成改写${tokens}`);
+  } catch (error) {
+    elements.assistantError.textContent = error.message;
+  } finally {
+    setAssistantBusy(false);
+  }
+}
+
 async function uploadReference(file) {
   if (!file) return;
   const allowed = ["image/jpeg", "image/png", "image/webp"];
@@ -537,6 +686,27 @@ function bindControls() {
     button.addEventListener("click", () => setPrompt(templates[button.dataset.template]));
   }
 
+  elements.promptAssistantOpen.addEventListener("click", openPromptAssistant);
+  elements.promptAssistantClose.addEventListener("click", closePromptAssistant);
+  elements.promptAssistantCancel.addEventListener("click", closePromptAssistant);
+  elements.promptAssistantGenerate.addEventListener("click", generateOfficialPrompt);
+  elements.promptAssistantDialog.addEventListener("cancel", (event) => {
+    if (state.assistantBusy) {
+      event.preventDefault();
+      return;
+    }
+    closePromptAssistant();
+  });
+  elements.assistantProviderSwitch.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-provider]");
+    if (!button) return;
+    setAssistantProvider(button.dataset.provider);
+    if (button.dataset.provider === "custom") {
+      elements.assistantBaseUrl.focus();
+      elements.assistantBaseUrl.select();
+    }
+  });
+
   elements.durationControl.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-value]");
     if (!button) return;
@@ -623,3 +793,4 @@ function bindControls() {
 
 bindControls();
 refreshStatus();
+refreshPromptAssistantStatus();

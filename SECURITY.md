@@ -15,3 +15,6 @@ Please use GitHub's private vulnerability reporting feature in the repository Se
 - Workflow submission is blocked when required nodes, models, types, topology, or queue state fail validation.
 - The bridge binds to localhost and should not be exposed directly to an untrusted network.
 - Reference uploads validate MIME type, decoded image format, dimensions, pixel count, and size before forwarding to ComfyUI.
+- Prompt-provider URLs reject embedded credentials, query strings, fragments, and remote plain HTTP. Plain HTTP is accepted only for loopback OpenAI-compatible services.
+- Prompt-provider error handling returns a bounded upstream message and never returns the submitted API key.
+- Never paste an API key into a public issue, commit, screenshot, workflow JSON, or shared terminal transcript.

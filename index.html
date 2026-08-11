@@ -85,6 +85,10 @@
                     <button type="button" data-template="portrait">人物表演</button>
                     <button type="button" data-template="atmosphere">氛围镜头</button>
                   </div>
+                  <button class="prompt-assistant-open" id="promptAssistantOpen" type="button">
+                    <svg aria-hidden="true"><use href="#icon-spark"></use></svg>
+                    <span><strong>AI 提示词编导</strong><small>按 H3 官方格式重写</small></span>
+                  </button>
                 </div>
               </div>
               <p class="field-error" id="promptError" role="alert"></p>
@@ -275,6 +279,80 @@
         </div>
       </aside>
     </main>
+
+    <dialog class="assistant-dialog" id="promptAssistantDialog" aria-labelledby="assistantTitle">
+      <div class="assistant-dialog__shell">
+        <header class="assistant-dialog__header">
+          <div>
+            <p class="eyebrow">H3 OFFICIAL PROMPT DIRECTOR</p>
+            <h2 id="assistantTitle">把创意整理成可执行镜头</h2>
+            <p>按 MiniMax H3 官方 Base / Ref2VA 指引组织画面、镜头时间线与原生声轨。</p>
+          </div>
+          <button class="assistant-dialog__close" id="promptAssistantClose" type="button" aria-label="关闭 AI 提示词编导">
+            <svg><use href="#icon-close"></use></svg>
+          </button>
+        </header>
+
+        <div class="assistant-dialog__body">
+          <section class="assistant-brief" aria-labelledby="assistantBriefTitle">
+            <div class="assistant-section-heading">
+              <span>01</span>
+              <div><h3 id="assistantBriefTitle">本次改写</h3><p id="assistantContext">读取当前创意与制片参数</p></div>
+            </div>
+            <div class="assistant-brief__preview" id="assistantBriefPreview">请先在主编辑器里写下画面创意。</div>
+            <div class="assistant-contract">
+              <span>官方结构门禁</span>
+              <ul>
+                <li><svg><use href="#icon-check"></use></svg><span>画面与镜头写入时间线字段</span></li>
+                <li><svg><use href="#icon-check"></use></svg><span>环境声与观众配乐严格分层</span></li>
+                <li><svg><use href="#icon-check"></use></svg><span>长视频逐 5 秒建立新剧情段</span></li>
+              </ul>
+            </div>
+            <p class="assistant-privacy"><strong>隐私边界</strong> 只发送当前文字、时长、比例与参考模式；参考图、本机路径、硬件和工作流不会发给模型服务。</p>
+          </section>
+
+          <section class="assistant-provider" aria-labelledby="assistantProviderTitle">
+            <div class="assistant-section-heading">
+              <span>02</span>
+              <div><h3 id="assistantProviderTitle">选择你自己的模型</h3><p id="assistantEnvironmentState">正在读取本地配置</p></div>
+            </div>
+
+            <div class="provider-switch" id="assistantProviderSwitch" role="group" aria-label="模型服务预设">
+              <button type="button" data-provider="deepseek" class="is-selected" aria-pressed="true">
+                <strong>DeepSeek</strong><span>官方当前 V4 Flash</span>
+              </button>
+              <button type="button" data-provider="custom" aria-pressed="false">
+                <strong>其他兼容接口</strong><span>云端或本机模型</span>
+              </button>
+            </div>
+
+            <label class="assistant-field" for="assistantBaseUrl">
+              <span>服务地址</span>
+              <input id="assistantBaseUrl" type="url" value="https://api.deepseek.com" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="assistant-field" for="assistantModel">
+              <span>模型名称</span>
+              <input id="assistantModel" type="text" value="deepseek-v4-flash" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="assistant-field" for="assistantApiKey">
+              <span>API Key <small id="assistantKeyState">仅保留到关闭页面</small></span>
+              <input id="assistantApiKey" type="password" placeholder="由你自行填写，不写入项目" autocomplete="off" spellcheck="false" data-1p-ignore="true" />
+            </label>
+            <p class="assistant-field-note">远程接口必须使用 HTTPS；本机 OpenAI-compatible 服务可使用 127.0.0.1，且允许不填 Key。</p>
+            <p class="assistant-error" id="assistantError" role="alert"></p>
+          </section>
+        </div>
+
+        <footer class="assistant-dialog__footer">
+          <div><span id="assistantGuideState">MiniMax H3 官方指引已锁定</span><small>模型输出还会经过本地字段与时间线复检</small></div>
+          <button class="assistant-cancel" id="promptAssistantCancel" type="button">取消</button>
+          <button class="assistant-generate" id="promptAssistantGenerate" type="button">
+            <span id="promptAssistantGenerateText">生成官方格式提示词</span>
+            <svg><use href="#icon-spark"></use></svg>
+          </button>
+        </footer>
+      </div>
+    </dialog>
 
     <section class="job-panel" id="jobPanel" aria-labelledby="jobTitle" hidden>
       <div class="job-panel__backdrop"></div>
