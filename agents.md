@@ -43,7 +43,7 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 ## 100-creator synthetic audit and workbench upgrade — 2026-08-12
 
 - The cohort is explicitly synthetic, not a claim of 100 real interviews or telemetry sessions. It covers short-form, commerce, narrative, performance, visual, agency, technical, and first-time local-generation journeys.
-- Ten ranked findings and their limits are recorded in `docs/creator-cohort-audit.md`; the first six high-leverage issues were addressed in the working product.
+- Ten ranked findings and their limits are recorded in `docs/creator-cohort-audit.md`; the first seven high-leverage issues were addressed in the working product.
 - Long-video authors now write one five-second beat per row and compile a validated timeline instead of manually formatting timecodes.
 - One local browser draft restores creative text and generation parameters after reload while excluding credentials, media, machine inventory, and workflows.
 - Creative readiness and runtime readiness are combined into one preflight with a direct return-to-fix action; technical diagnostics remain available under progressive disclosure.
