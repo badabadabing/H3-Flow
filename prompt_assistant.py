@@ -278,13 +278,23 @@ def validate_generated_prompt(prompt: str, request: dict[str, Any]) -> list[str]
     return list(fields)
 
 
-def _upstream_error(exc: urllib.error.HTTPError) -> str:
+def _upstream_error(exc: urllib.error.HTTPError, provider: str = "模型服务") -> str:
     try:
         payload = json.loads(exc.read().decode("utf-8", "replace"))
         message = str(payload.get("error", {}).get("message") or payload.get("message") or "").strip()
     except (json.JSONDecodeError, AttributeError, TypeError):
         message = ""
     safe = re.sub(r"(?i)(api[-_ ]?key|authorization)\s*[:=]\s*\S+", r"\1: [redacted]", message)[:500]
+    provider_label = "DeepSeek" if provider == "DeepSeek" else "模型服务"
+    actionable = {
+        401: "API Key 无效，请到 DeepSeek 开放平台核对后重新填写",
+        402: f"{provider_label} 账户余额不足，请充值或更换账户后重试",
+        422: f"请求参数不符合 {provider_label} 接口要求，请核对模型名与服务地址",
+        429: f"{provider_label} 请求过于频繁，请稍后再提交",
+        503: f"{provider_label} 服务繁忙，请稍后再提交",
+    }.get(exc.code)
+    if actionable:
+        return f"{actionable}（HTTP {exc.code}）"
     return safe or f"HTTP {exc.code}"
 
 
@@ -323,7 +333,7 @@ def request_chat_completion(
         with urllib.request.urlopen(upstream, timeout=timeout) as response:
             result = json.load(response)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"模型服务拒绝请求：{_upstream_error(exc)}") from exc
+        raise RuntimeError(f"模型服务拒绝请求：{_upstream_error(exc, config['provider'])}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"无法连接模型服务：{exc.reason}") from exc
     except TimeoutError as exc:

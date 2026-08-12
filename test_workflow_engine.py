@@ -4,6 +4,7 @@ import unittest
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from PIL import Image
 
@@ -163,6 +164,17 @@ class WorkflowEngineTests(unittest.TestCase):
         self.assertIn("data-shot-handoff", javascript)
         self.assertIn("function handoffDramaShot", javascript)
         self.assertIn("shot.beats.map", javascript)
+
+    def test_creator_modes_share_one_ephemeral_llm_config_with_clear_key_state(self) -> None:
+        root = Path(__file__).resolve().parent
+        html = (root / "index.html").read_text(encoding="utf-8")
+        javascript = (root / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="dramaSecurityState"', html)
+        self.assertIn("function bindEphemeralLlmConfig()", javascript)
+        self.assertIn("function sessionLlmApiKey()", javascript)
+        self.assertIn("本页内存已就绪", javascript)
+        self.assertNotIn("apiKey", javascript.split("function persistDramaDraft()", 1)[1].split("function queueDramaDraftSave()", 1)[0])
+        self.assertNotIn("assistantApiKey", javascript.split("function persistDraft()", 1)[1].split("function queueDraftSave()", 1)[0])
 
     def test_duration_is_split_into_verified_short_segments(self) -> None:
         for duration, expected_segments in ((5, 1), (10, 2), (15, 3), (30, 6)):
@@ -353,6 +365,24 @@ class WorkflowEngineTests(unittest.TestCase):
         self.assertTrue(status["environment_configured"])
         self.assertNotIn("private-test-key", str(status))
 
+    def test_deepseek_error_codes_have_actionable_chinese_messages(self) -> None:
+        expected = {
+            401: "API Key 无效",
+            402: "账户余额不足",
+            422: "请求参数不符合 DeepSeek 接口要求",
+            429: "请求过于频繁",
+            503: "DeepSeek 服务繁忙",
+        }
+        for code, message in expected.items():
+            error = HTTPError(
+                "https://api.deepseek.com/chat/completions",
+                code,
+                "upstream error",
+                {},
+                BytesIO(b'{"error":{"message":"upstream detail"}}'),
+            )
+            self.assertIn(message, prompt_assistant._upstream_error(error, "DeepSeek"))
+
     def test_prompt_assistant_validates_full_reference_format(self) -> None:
         request = {"duration": 5, "reference_mode": "identity"}
         generated = """subject_definitions:
@@ -442,6 +472,39 @@ non_diegetic_music: Sparse piano notes at a slow tempo with sustained low string
         self.assertEqual(package["episodes"][0]["scenes"][0]["shots"][0]["dialogue"][0]["speaker_id"], "CHAR-01")
         self.assertEqual(package["episodes"][0]["duration_seconds"], 30)
         self.assertTrue(package["checks"]["references_resolved"])
+
+    def test_short_drama_treats_every_creator_setting_as_a_hard_constraint(self) -> None:
+        request = short_drama.normalise_short_drama_request(
+            {
+                "theme": "一名调查员发现自己的记忆正在被一份旧档案逐页改写。",
+                "working_title": "记忆审判",
+                "genre": "女性向科幻悬疑",
+                "visual_style": "冷白实验室与琥珀色记忆闪回形成严格对比",
+                "audience": "喜爱强情节反转的成年观众",
+                "language": "四川方言",
+                "episode_count": 1,
+                "episode_duration_seconds": 30,
+                "cast_count": 1,
+                "aspect": "9:16",
+                "ending_style": "closed",
+                "dialogue_density": "lean",
+                "quality": "studio",
+            }
+        )
+        messages = short_drama.build_short_drama_messages(request)
+        self.assertIn("Every CREATIVE_INPUT field is a hard production constraint", messages[0]["content"])
+        for key, value in request.items():
+            self.assertIn(f'"{key}"', messages[1]["content"])
+            if isinstance(value, str) and value:
+                self.assertIn(value, messages[1]["content"])
+
+        package = short_drama.validate_short_drama_package(self.short_drama_payload(), request)
+        self.assertEqual(package["project"]["title"], "记忆审判")
+        self.assertEqual(package["project"]["dialogue_density"], "lean")
+        self.assertTrue(package["checks"]["constraints_applied"])
+        h3_brief = package["episodes"][0]["scenes"][0]["shots"][0]["h3_brief"]
+        for expected in ("9:16", "四川方言", "冷白实验室", "studio"):
+            self.assertIn(expected, h3_brief)
 
     def test_short_drama_validator_rejects_wrong_episode_duration(self) -> None:
         request = short_drama.normalise_short_drama_request(

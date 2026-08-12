@@ -24,14 +24,16 @@ Turn the supplied creative brief into a production-ready short-drama package. Tr
 Return one JSON object only. Do not use Markdown, commentary, or keys outside the requested structure.
 
 Production rules:
-1. Match episode_count and episode_duration_seconds exactly. Every episode must contain scenes and shots whose duration_seconds total exactly to the requested episode duration.
-2. Every shot duration_seconds must be 5, 10, or 15 so it can be compiled into MiniMax H3-safe units. Prefer 10 or 15 seconds; use 5 seconds for inserts or transitions.
-3. Give characters, wardrobe states, props, locations, episodes, scenes, and shots stable unique IDs. Every referenced ID must exist.
-4. Preserve character identity, wardrobe, props, time of day, screen direction, injuries, weather, and object state. State changes belong in continuity_in and continuity_out.
-5. Each episode begins with a hook, advances the season conflict, and ends with the requested ending style. Do not pad repeated actions.
-6. Dialogue must be performable within the shot duration. speaker_id must reference a character. Keep language exactly as requested.
-7. h3_brief is a self-contained Chinese generation brief with subject identity, wardrobe, location, action, camera, lighting, dialogue, sound, and continuity anchors. beats must split every shot into consecutive five-second actions from zero to duration_seconds, with no gaps. Do not claim a reference image exists.
-8. This is planning only. Never claim that images, videos, voices, models, plugins, or ComfyUI jobs were generated or verified.
+1. Every CREATIVE_INPUT field is a hard production constraint, not a suggestion. Apply theme, working_title, genre, visual_style, audience, language, episode_count, episode_duration_seconds, cast_count, aspect, ending_style, dialogue_density, and quality throughout the package. If working_title is non-empty, copy it to project.title exactly.
+2. Match episode_count, episode_duration_seconds, and cast_count exactly. Every episode must contain scenes and shots whose duration_seconds total exactly to the requested episode duration.
+3. Every shot duration_seconds must be 5, 10, or 15 so it can be compiled into MiniMax H3-safe units. Prefer 10 or 15 seconds; use 5 seconds for inserts or transitions.
+4. Give characters, wardrobe states, props, locations, episodes, scenes, and shots stable unique IDs. Every referenced ID must exist.
+5. Preserve character identity, wardrobe, props, time of day, screen direction, injuries, weather, and object state. State changes belong in continuity_in and continuity_out.
+6. Each episode begins with a hook, advances the season conflict, and ends with ending_style. Do not pad repeated actions.
+7. Dialogue must be performable within the shot duration. speaker_id must reference a character. Use language exactly. Treat dialogue_density as lean (at most one short line per shot), balanced (up to two lines), or dense (up to four concise lines when dramatically useful).
+8. visual_style and aspect must govern bible.visual_language and every h3_brief. audience must govern story clarity and intensity. quality must govern production detail: draft is economical, balanced is robust, studio is highly specific but still executable.
+9. h3_brief is a self-contained Chinese generation brief with subject identity, wardrobe, location, action, camera, lighting, dialogue, sound, aspect, visual style, quality, audience, language, and continuity anchors. beats must split every shot into consecutive five-second actions from zero to duration_seconds, with no gaps. Do not claim a reference image exists.
+10. This is planning only. Never claim that images, videos, voices, models, plugins, or ComfyUI jobs were generated or verified.
 
 Required JSON shape:
 {
@@ -159,11 +161,22 @@ def build_short_drama_messages(request: dict[str, Any]) -> list[dict[str, str]]:
         {
             "role": "user",
             "content": (
-                "Create the complete package now. All creative facts are inside CREATIVE_INPUT. "
-                "The episode and duration totals are hard constraints.\n\nCREATIVE_INPUT\n" + creative_input
+                "Create the complete package now. JSON output is required. All creative facts are inside "
+                "CREATIVE_INPUT and every field is a hard production constraint. Do not omit, weaken, or replace "
+                "any selected value. The episode, duration, cast, aspect, language, style, audience, ending, dialogue "
+                "density, and quality requirements must all be applied.\n\nCREATIVE_INPUT\n" + creative_input
             ),
         },
     ]
+
+
+def _h3_constraint_prefix(request: dict[str, Any]) -> str:
+    return (
+        "制作硬约束："
+        f"{request['genre']}；{request['aspect']} 构图；视觉风格为 {request['visual_style']}；"
+        f"目标观众为 {request['audience']}；对白语言为 {request['language']}；"
+        f"对白密度 {request['dialogue_density']}；交付质量 {request['quality']}。"
+    )
 
 
 def _object(value: Any, label: str) -> dict[str, Any]:
@@ -219,7 +232,7 @@ def validate_short_drama_package(raw: dict[str, Any], request: dict[str, Any]) -
     bible_raw = _object(source.get("bible"), "bible")
 
     project = {
-        "title": _clean(project_raw.get("title"), label="剧名", maximum=80),
+        "title": request["working_title"] or _clean(project_raw.get("title"), label="剧名", maximum=80),
         "logline": _clean(project_raw.get("logline"), label="一句话梗概", maximum=500),
         "tone": _clean(project_raw.get("tone"), label="叙事基调", maximum=300),
         "narrative_engine": _clean(project_raw.get("narrative_engine"), label="持续追剧动力", maximum=500),
@@ -229,6 +242,7 @@ def validate_short_drama_package(raw: dict[str, Any], request: dict[str, Any]) -
         "language": request["language"],
         "aspect": request["aspect"],
         "quality": request["quality"],
+        "dialogue_density": request["dialogue_density"],
         "ending_style": request["ending_style"],
         "episode_count": request["episode_count"],
         "episode_duration_seconds": request["episode_duration_seconds"],
@@ -437,7 +451,9 @@ def validate_short_drama_package(raw: dict[str, Any], request: dict[str, Any]) -
                         "music": _clean(raw_shot.get("music") or "N/A", label="配乐", maximum=300),
                         "continuity_in": _clean(raw_shot.get("continuity_in"), label="入镜连续性", maximum=500),
                         "continuity_out": _clean(raw_shot.get("continuity_out"), label="出镜连续性", maximum=500),
-                        "h3_brief": _clean(raw_shot.get("h3_brief"), label="H3 镜头简报", minimum=24, maximum=2400),
+                        "h3_brief": _h3_constraint_prefix(request) + _clean(
+                            raw_shot.get("h3_brief"), label="H3 镜头简报", minimum=24, maximum=2000
+                        ),
                         "beats": beats,
                     }
                 )
@@ -494,6 +510,7 @@ def validate_short_drama_package(raw: dict[str, Any], request: dict[str, Any]) -
             "stable_ids": True,
             "references_resolved": True,
             "duration_budget_exact": True,
+            "constraints_applied": True,
             "planning_only": True,
         },
     }

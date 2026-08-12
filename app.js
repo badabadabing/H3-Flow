@@ -759,22 +759,17 @@ function setAssistantProvider(provider) {
 async function refreshPromptAssistantStatus() {
   try {
     state.assistantStatus = await api("/api/prompt-assistant");
-    elements.assistantBaseUrl.value = state.assistantStatus.default_base_url;
-    elements.assistantModel.value = state.assistantStatus.default_model;
     const isDeepSeek = state.assistantStatus.provider === "DeepSeek";
     setAssistantProvider(isDeepSeek ? "deepseek" : "custom");
-    elements.assistantBaseUrl.value = state.assistantStatus.default_base_url;
-    elements.assistantModel.value = state.assistantStatus.default_model;
+    applyEphemeralLlmDefaults(state.assistantStatus.default_base_url, state.assistantStatus.default_model);
     elements.assistantEnvironmentState.textContent = state.assistantStatus.environment_configured
       ? `${state.assistantStatus.provider} 已由启动环境配置`
       : "Key 由你填写，也可以改用其他兼容服务";
-    elements.assistantKeyState.textContent = state.assistantStatus.environment_configured
-      ? "启动环境已配置"
-      : "仅保留到关闭页面";
     elements.assistantApiKey.placeholder = state.assistantStatus.environment_configured
       ? "留空即可使用启动环境中的 Key"
       : "由你自行填写，不写入项目";
     elements.assistantGuideState.textContent = `MiniMax H3 官方指引 · ${state.assistantStatus.guide_revision.slice(0, 8)}`;
+    updateEphemeralLlmState();
   } catch (error) {
     elements.assistantEnvironmentState.textContent = "本地提示词编导状态读取失败";
     elements.assistantError.textContent = error.message;
@@ -833,7 +828,7 @@ async function generateOfficialPrompt() {
     elements.assistantError.textContent = "请填写模型名称。";
     return;
   }
-  if (!elements.assistantApiKey.value.trim() && !state.assistantStatus?.environment_configured && !isLoopback) {
+  if (!sessionLlmApiKey() && !state.assistantStatus?.environment_configured && !isLoopback) {
     elements.assistantError.textContent = "远程模型服务需要 API Key；Key 仅用于本次请求，不会写入项目。";
     return;
   }
@@ -848,7 +843,7 @@ async function generateOfficialPrompt() {
       api_config: {
         base_url: baseUrl,
         model,
-        api_key: elements.assistantApiKey.value.trim(),
+        api_key: sessionLlmApiKey(),
       },
     });
     elements.prompt.value = result.prompt;
@@ -1084,6 +1079,10 @@ function bindControls() {
     const button = event.target.closest("button[data-provider]");
     if (!button) return;
     setAssistantProvider(button.dataset.provider);
+    if (button.dataset.provider === "deepseek") {
+      elements.assistantBaseUrl.dispatchEvent(new Event("input", { bubbles: true }));
+      elements.assistantModel.dispatchEvent(new Event("input", { bubbles: true }));
+    }
     if (button.dataset.provider === "custom") {
       elements.assistantBaseUrl.focus();
       elements.assistantBaseUrl.select();
@@ -1238,6 +1237,7 @@ const dramaElements = {
   baseUrl: $("#dramaBaseUrl"),
   model: $("#dramaModel"),
   apiKey: $("#dramaApiKey"),
+  securityState: $("#dramaSecurityState"),
   providerSettings: $("#dramaProviderSettings"),
   providerState: $("#dramaProviderState"),
   keyState: $("#dramaKeyState"),
@@ -1258,6 +1258,59 @@ const dramaElements = {
   exportJson: $("#dramaExportJson"),
   exportMarkdown: $("#dramaExportMarkdown"),
 };
+
+const ephemeralLlmState = { syncing: false, touched: false };
+
+function sessionLlmApiKey() {
+  return dramaElements.apiKey.value.trim() || elements.assistantApiKey.value.trim();
+}
+
+function applyEphemeralLlmDefaults(baseUrl, model) {
+  if (ephemeralLlmState.touched) return;
+  ephemeralLlmState.syncing = true;
+  elements.assistantBaseUrl.value = baseUrl;
+  dramaElements.baseUrl.value = baseUrl;
+  elements.assistantModel.value = model;
+  dramaElements.model.value = model;
+  ephemeralLlmState.syncing = false;
+}
+
+function updateEphemeralLlmState() {
+  const ready = Boolean(sessionLlmApiKey());
+  const environmentReady = Boolean(
+    state.assistantStatus?.environment_configured || dramaState.status?.provider.environment_configured
+  );
+  const label = ready ? "本页内存已就绪" : environmentReady ? "启动环境已配置" : "仅保留到关闭页面";
+  elements.assistantKeyState.textContent = label;
+  dramaElements.keyState.textContent = label;
+  dramaElements.securityState.textContent = ready
+    ? "Key 已就绪 · 不落盘"
+    : environmentReady ? "环境 Key 已就绪" : "等待本页 Key";
+  dramaElements.securityState.classList.toggle("is-ready", ready || environmentReady);
+}
+
+function bindEphemeralLlmConfig() {
+  const pairs = [
+    [elements.assistantBaseUrl, dramaElements.baseUrl],
+    [elements.assistantModel, dramaElements.model],
+    [elements.assistantApiKey, dramaElements.apiKey],
+    [dramaElements.baseUrl, elements.assistantBaseUrl],
+    [dramaElements.model, elements.assistantModel],
+    [dramaElements.apiKey, elements.assistantApiKey],
+  ];
+  for (const [source, target] of pairs) {
+    source.addEventListener("input", () => {
+      if (ephemeralLlmState.syncing) return;
+      ephemeralLlmState.touched = true;
+      ephemeralLlmState.syncing = true;
+      target.value = source.value;
+      ephemeralLlmState.syncing = false;
+      updateEphemeralLlmState();
+    });
+  }
+  applyEphemeralLlmDefaults(elements.assistantBaseUrl.value, elements.assistantModel.value);
+  updateEphemeralLlmState();
+}
 
 const dramaDraftFields = [
   "theme", "workingTitle", "genre", "episodeCount", "episodeDuration", "aspect", "castCount",
@@ -1375,17 +1428,17 @@ function switchWorkspace(mode, { persist = true } = {}) {
 async function refreshDramaStatus() {
   try {
     dramaState.status = await api("/api/short-drama");
-    dramaElements.baseUrl.value = dramaState.status.provider.default_base_url;
-    dramaElements.model.value = dramaState.status.provider.default_model;
+    applyEphemeralLlmDefaults(
+      dramaState.status.provider.default_base_url,
+      dramaState.status.provider.default_model,
+    );
     dramaElements.providerState.textContent = dramaState.status.provider.environment_configured
       ? `${dramaState.status.provider.name} 已由启动环境配置`
       : "填写 DeepSeek 或其他兼容模型";
-    dramaElements.keyState.textContent = dramaState.status.provider.environment_configured
-      ? "启动环境已配置"
-      : "仅保留到关闭页面";
     dramaElements.apiKey.placeholder = dramaState.status.provider.environment_configured
       ? "留空即可使用启动环境中的 Key"
       : "由你填写，不写入项目";
+    updateEphemeralLlmState();
   } catch (error) {
     dramaElements.providerState.textContent = "短剧服务状态读取失败";
     dramaElements.error.textContent = error.message;
@@ -1426,7 +1479,7 @@ function validateDramaSubmission() {
     dramaElements.model.focus();
     return false;
   }
-  if (!dramaElements.apiKey.value.trim() && !dramaState.status?.provider.environment_configured && !isLoopback) {
+  if (!sessionLlmApiKey() && !dramaState.status?.provider.environment_configured && !isLoopback) {
     dramaElements.error.textContent = "远程模型服务需要 API Key；Key 只用于本次请求且不会保存。";
     dramaElements.providerSettings.open = true;
     dramaElements.apiKey.focus();
@@ -1567,7 +1620,7 @@ async function generateDramaPackage(event) {
       api_config: {
         base_url: dramaElements.baseUrl.value.trim(),
         model: dramaElements.model.value.trim(),
-        api_key: dramaElements.apiKey.value.trim(),
+        api_key: sessionLlmApiKey(),
       },
     });
     dramaState.package = result;
@@ -1727,6 +1780,7 @@ function bindShortDrama() {
   });
 }
 
+bindEphemeralLlmConfig();
 bindShortDrama();
 restoreDramaDraft();
 updateDramaScope();

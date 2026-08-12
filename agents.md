@@ -83,3 +83,13 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - The season ledger exposes overview, production assets, episodes, scenes, hooks, and shots. JSON and Markdown exports remain local. A shot handoff clears any previous reference image, writes its beats and sound into the existing H3 desk, and never submits the queue automatically.
 - Browser drafts persist creative fields and the validated package only. API key, model endpoint, model name, reference media, machine inventory, and workflows are excluded.
 - Full-series submission is visibly disabled until real reference assets, a pilot, resource checks, and resumable execution are implemented and verified.
+
+## DeepSeek ephemeral-Key and constraint repair — 2026-08-12
+
+- Browser interception reproduced two separate issues without contacting DeepSeek: the short-drama Key entered the local request while the UI kept showing the static “Key 不落盘” copy, and a Key entered in the single-video prompt director was not available after switching to short-drama mode.
+- The prompt director and short-drama desk now share one in-memory-only base URL, model, and API Key. Either input updates the other, successful entry shows “本页内存已就绪 / Key 已就绪 · 不落盘”, and refresh or page close still clears the secret.
+- No credential was added to localStorage, project files, drafts, exports, logs, or API responses. The server continues to send `Authorization: Bearer <key>` only to the user-selected OpenAI-compatible endpoint.
+- DeepSeek HTTP 401, 402, 422, 429, and 503 responses now map to actionable Chinese explanations for invalid Key, insufficient balance, invalid parameters, rate limiting, and service load.
+- All short-drama creator settings are now explicit hard constraints in both the system and user messages. The selected working title is deterministically preserved, dialogue density is recorded, and genre, aspect, visual style, audience, language, dialogue density, and quality are injected into every downstream H3 shot brief.
+- Official DeepSeek JSON mode remains enabled with `response_format: {"type": "json_object"}`, an explicit JSON contract in the prompt, bounded output length, and local schema validation plus at most one repair attempt.
+- Verification: JavaScript syntax passed; 30/30 Python tests passed; live browser interception showed one shared temporary Key, 13/13 creator settings in the request, explicit ready-state feedback, and no external DeepSeek or ComfyUI generation call.

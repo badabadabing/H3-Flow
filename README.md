@@ -53,7 +53,7 @@ py -3 -m pip install -r requirements.txt
 
 所有配置仅写入当前启动进程的环境变量，不修改系统全局配置。
 
-提示词编导的 API Key 可以直接在页面里填写，仅保留到页面关闭；也可以在启动前设置 `H3_FLOW_LLM_BASE_URL`、`H3_FLOW_LLM_MODEL` 和 `H3_FLOW_LLM_API_KEY`。详细格式和隐私边界见 [docs/prompt-assistant.md](docs/prompt-assistant.md)。
+提示词编导的 API Key 可以直接在页面里填写，仅保留到页面关闭；单视频提示词编导与短剧模式共享同一份本页临时配置，任一处填写后都会显示“本页内存已就绪”。刷新或关闭页面会清除，且不会写入草稿、项目或响应。也可以在启动前设置 `H3_FLOW_LLM_BASE_URL`、`H3_FLOW_LLM_MODEL` 和 `H3_FLOW_LLM_API_KEY`。详细格式和隐私边界见 [docs/prompt-assistant.md](docs/prompt-assistant.md)。
 
 短剧模式使用同一套用户自配模型规则。顶栏切换到“AI 短剧”，填写主题、集数和单集时长，再展开模型设置填写自己的 API Key。制片包会自动保存在当前浏览器，但密钥、模型服务地址和本机信息不会进入草稿。完整步骤、范围和整季生成门禁见 [docs/short-drama-mode.md](docs/short-drama-mode.md)。
 
