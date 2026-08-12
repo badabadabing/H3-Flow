@@ -1213,17 +1213,26 @@ const dramaState = {
   busy: false,
   view: "overview",
   episodeIndex: 0,
+  characterAssets: {},
+  pendingCharacterId: null,
+  batchJobId: null,
+  batchPollTimer: null,
 };
 
 const dramaElements = {
   modes: $("#workspaceModes"),
+  journey: $("#dramaJourney"),
   videoWorkspace: $("#videoWorkspace"),
   workspace: $("#dramaWorkspace"),
   form: $("#dramaForm"),
   theme: $("#dramaTheme"),
   themeCount: $("#dramaThemeCount"),
   workingTitle: $("#dramaWorkingTitle"),
-  genre: $("#dramaGenre"),
+  genrePreset: $("#dramaGenrePreset"),
+  genreCustom: $("#dramaGenreCustom"),
+  stylePreset: $("#dramaStylePreset"),
+  styleCustom: $("#dramaStyleCustom"),
+  advancedSettings: $("#dramaAdvancedSettings"),
   episodeCount: $("#dramaEpisodeCount"),
   episodeDuration: $("#dramaEpisodeDuration"),
   aspect: $("#dramaAspect"),
@@ -1233,7 +1242,6 @@ const dramaElements = {
   language: $("#dramaLanguage"),
   audience: $("#dramaAudience"),
   quality: $("#dramaQuality"),
-  visualStyle: $("#dramaVisualStyle"),
   baseUrl: $("#dramaBaseUrl"),
   model: $("#dramaModel"),
   apiKey: $("#dramaApiKey"),
@@ -1257,6 +1265,19 @@ const dramaElements = {
   view: $("#dramaPackageView"),
   exportJson: $("#dramaExportJson"),
   exportMarkdown: $("#dramaExportMarkdown"),
+  assetGate: $("#dramaAssetGate"),
+  assetSummary: $("#dramaAssetSummary"),
+  characterAssets: $("#dramaCharacterAssets"),
+  characterInput: $("#dramaCharacterInput"),
+  productionGate: $("#dramaProductionGate"),
+  batchGenerate: $("#dramaBatchGenerate"),
+  batchState: $("#dramaBatchState"),
+  batchProgress: $("#dramaBatchProgress"),
+  batchProgressLabel: $("#dramaBatchProgressLabel"),
+  batchProgressCount: $("#dramaBatchProgressCount"),
+  batchProgressBar: $("#dramaBatchProgressBar"),
+  batchProgressDetail: $("#dramaBatchProgressDetail"),
+  batchResults: $("#dramaBatchResults"),
 };
 
 const ephemeralLlmState = { syncing: false, touched: false };
@@ -1313,8 +1334,9 @@ function bindEphemeralLlmConfig() {
 }
 
 const dramaDraftFields = [
-  "theme", "workingTitle", "genre", "episodeCount", "episodeDuration", "aspect", "castCount",
-  "endingStyle", "dialogueDensity", "language", "audience", "quality", "visualStyle",
+  "theme", "workingTitle", "genrePreset", "genreCustom", "stylePreset", "styleCustom",
+  "episodeCount", "episodeDuration", "aspect", "castCount", "endingStyle", "dialogueDensity",
+  "language", "audience", "quality",
 ];
 
 function escapeHtml(value) {
@@ -1334,11 +1356,17 @@ function formatDramaDuration(seconds) {
   return remainder ? `${minutes} 分 ${remainder} 秒` : `${minutes} 分钟`;
 }
 
+function composeDramaCreativeChoice(preset, custom, aiChoice) {
+  const selected = preset === "ai" ? aiChoice : String(preset || "").trim();
+  const additional = String(custom || "").trim();
+  return additional ? `${selected}；用户自定义要求：${additional}` : selected;
+}
+
 function dramaInputPayload() {
   return {
     theme: dramaElements.theme.value.trim(),
     working_title: dramaElements.workingTitle.value.trim(),
-    genre: dramaElements.genre.value,
+    genre: composeDramaCreativeChoice(dramaElements.genrePreset.value, dramaElements.genreCustom.value, "由编剧模型根据主题判断最合适的题材"),
     episode_count: Number(dramaElements.episodeCount.value),
     episode_duration_seconds: Number(dramaElements.episodeDuration.value),
     aspect: dramaElements.aspect.value,
@@ -1347,7 +1375,7 @@ function dramaInputPayload() {
     dialogue_density: dramaElements.dialogueDensity.value,
     language: dramaElements.language.value.trim(),
     audience: dramaElements.audience.value.trim(),
-    visual_style: dramaElements.visualStyle.value.trim(),
+    visual_style: composeDramaCreativeChoice(dramaElements.stylePreset.value, dramaElements.styleCustom.value, "由编剧模型根据故事设计统一、可执行的视觉风格"),
     quality: dramaElements.quality.value,
   };
 }
@@ -1396,8 +1424,19 @@ function restoreDramaDraft() {
   for (const field of dramaDraftFields) {
     if (typeof draft.inputs?.[field] === "string") dramaElements[field].value = draft.inputs[field];
   }
+  if (typeof draft.inputs?.genre === "string" && !draft.inputs?.genrePreset) {
+    const option = [...dramaElements.genrePreset.options].find((item) => item.value === draft.inputs.genre);
+    dramaElements.genrePreset.value = option ? draft.inputs.genre : "ai";
+    dramaElements.genreCustom.value = option ? "" : draft.inputs.genre;
+  }
+  if (typeof draft.inputs?.visualStyle === "string" && !draft.inputs?.stylePreset) {
+    const option = [...dramaElements.stylePreset.options].find((item) => item.value === draft.inputs.visualStyle);
+    dramaElements.stylePreset.value = option ? draft.inputs.visualStyle : "ai";
+    dramaElements.styleCustom.value = option ? "" : draft.inputs.visualStyle;
+  }
   if (draft.package && typeof draft.package === "object" && Array.isArray(draft.package.episodes)) {
     dramaState.package = draft.package;
+    dramaState.characterAssets = {};
     renderDramaPackage();
   }
   if (draft.updatedAt) {
@@ -1493,7 +1532,7 @@ function setDramaBusy(busy) {
   dramaState.busy = busy;
   dramaElements.generate.disabled = busy;
   dramaElements.generate.classList.toggle("is-loading", busy);
-  dramaElements.generateText.textContent = busy ? "正在编排资产、分集与镜头" : "生成完整制片包";
+  dramaElements.generateText.textContent = busy ? "正在写剧本并设计角色" : "生成剧本与角色方案";
   for (const field of dramaElements.form.querySelectorAll("input, textarea, select")) field.disabled = busy;
 }
 
@@ -1545,6 +1584,92 @@ function renderDramaAssets() {
   </div>`;
 }
 
+function dramaApprovedCharacterCount() {
+  return (dramaState.package?.characters || []).filter((character) => {
+    const asset = dramaState.characterAssets[character.id];
+    return Boolean(asset?.token && asset.approved);
+  }).length;
+}
+
+function updateDramaJourney(step) {
+  if (!dramaElements.journey) return;
+  [...dramaElements.journey.children].forEach((item, index) => {
+    item.classList.toggle("is-current", index === step);
+    item.classList.toggle("is-complete", index < step);
+  });
+}
+
+function renderDramaAssetGate() {
+  const characters = dramaState.package?.characters || [];
+  const approved = dramaApprovedCharacterCount();
+  dramaElements.assetSummary.textContent = characters.length
+    ? `已确认 ${approved} / ${characters.length}`
+    : "等待剧本方案";
+  dramaElements.characterAssets.innerHTML = characters.map((character) => {
+    const asset = dramaState.characterAssets[character.id];
+    const stateLabel = asset?.approved ? "已确认" : asset?.token ? "待你确认" : "待上传";
+    const preview = asset?.previewUrl
+      ? `<img src="${escapeHtml(asset.previewUrl)}" alt="${escapeHtml(character.name)} 的角色参考图" />`
+      : `<div class="drama-character-asset__placeholder"><span>${escapeHtml(character.id)}</span><small>清晰正脸或半身照</small></div>`;
+    return `<article class="drama-character-asset ${asset?.approved ? "is-approved" : ""}">
+      <div class="drama-character-asset__media">${preview}<span>${stateLabel}</span></div>
+      <div class="drama-character-asset__body">
+        <div><small>${escapeHtml(character.id)} · ${escapeHtml(character.role)}</small><strong>${escapeHtml(character.name)}</strong></div>
+        <p>${escapeHtml(character.appearance)}</p>
+        <div class="drama-character-asset__actions">
+          <button type="button" data-character-upload="${escapeHtml(character.id)}">${asset?.token ? "更换参考图" : "上传参考图"}</button>
+          ${asset?.token ? `<button type="button" class="is-primary" data-character-approve="${escapeHtml(character.id)}">${asset.approved ? "取消确认" : "确认此形象"}</button>` : ""}
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+
+  const allApproved = characters.length > 0 && approved === characters.length;
+  dramaElements.batchGenerate.disabled = !allApproved || Boolean(dramaState.batchJobId);
+  dramaElements.batchState.textContent = allApproved
+    ? "角色已确认，可以开始整部生成"
+    : `还需确认 ${Math.max(0, characters.length - approved)} 个角色`;
+  updateDramaJourney(allApproved ? 2 : characters.length ? 1 : 0);
+}
+
+async function uploadDramaCharacterAsset(file, characterId) {
+  if (!file || !characterId) return;
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    showToast("角色参考图仅支持 JPG、PNG 或 WebP");
+    return;
+  }
+  if (file.size > 12 * 1024 * 1024) {
+    showToast("角色参考图必须小于 12MB");
+    return;
+  }
+  dramaState.characterAssets[characterId] = { uploading: true, approved: false };
+  renderDramaAssetGate();
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const { reference } = await post("/api/upload", { filename: file.name, data });
+    const prior = dramaState.characterAssets[characterId];
+    if (prior?.previewUrl) URL.revokeObjectURL(prior.previewUrl);
+    dramaState.characterAssets[characterId] = {
+      ...reference,
+      previewUrl: URL.createObjectURL(file),
+      approved: false,
+    };
+    renderDramaAssetGate();
+    showToast(`${characterId} 参考图已真实上传到本机 ComfyUI，请确认形象`);
+  } catch (error) {
+    delete dramaState.characterAssets[characterId];
+    renderDramaAssetGate();
+    showToast(error.message);
+  } finally {
+    dramaElements.characterInput.value = "";
+  }
+}
+
 function renderDramaEpisode() {
   const episode = dramaState.package.episodes[dramaState.episodeIndex];
   if (!episode) return "";
@@ -1566,7 +1691,7 @@ function renderDramaEpisode() {
           return `<article class="drama-shot">
             <div class="drama-shot__time"><span>${escapeHtml(shot.id.split("-").slice(-2).join("-"))}</span><strong>${shot.duration_seconds}s</strong><span>${shotStart}–${shotStart + shot.duration_seconds}s</span></div>
             <div class="drama-shot__body"><strong>${escapeHtml(shot.shot_size)} · ${escapeHtml(shot.camera)}</strong><p>${escapeHtml(shot.action)}</p><small>${dialogue ? escapeHtml(dialogue) : "无对白"} · ${escapeHtml(shot.sound)}</small></div>
-            <button type="button" data-shot-handoff data-scene-index="${sceneIndex}" data-shot-index="${shotIndex}">送入 H3 工作台</button>
+            <span class="drama-shot__queued">将自动加入整部队列</span>
           </article>`;
         }).join("")}</div>
       </section>`;
@@ -1608,6 +1733,7 @@ function renderDramaPackage() {
     <div><dt>总时长</dt><dd>${formatDramaDuration(pack.project.total_duration_seconds)}</dd></div>`;
   renderDramaLedger();
   renderDramaView();
+  renderDramaAssetGate();
 }
 
 async function generateDramaPackage(event) {
@@ -1624,6 +1750,11 @@ async function generateDramaPackage(event) {
       },
     });
     dramaState.package = result;
+    for (const asset of Object.values(dramaState.characterAssets)) {
+      if (asset?.previewUrl) URL.revokeObjectURL(asset.previewUrl);
+    }
+    dramaState.characterAssets = {};
+    dramaState.batchJobId = null;
     dramaState.view = "overview";
     dramaState.episodeIndex = 0;
     renderDramaPackage();
@@ -1638,39 +1769,80 @@ async function generateDramaPackage(event) {
   }
 }
 
-function findDramaShot(sceneIndex, shotIndex) {
-  const episode = dramaState.package?.episodes?.[dramaState.episodeIndex];
-  return episode?.scenes?.[sceneIndex]?.shots?.[shotIndex] || null;
+function dramaBatchAssetPayload() {
+  return Object.fromEntries(Object.entries(dramaState.characterAssets).map(([id, asset]) => [id, {
+    token: asset.token,
+    original_name: asset.original_name,
+    width: asset.width,
+    height: asset.height,
+    approved: Boolean(asset.approved),
+  }]));
 }
 
-function handoffDramaShot(sceneIndex, shotIndex) {
-  const shot = findDramaShot(sceneIndex, shotIndex);
-  if (!shot) return;
-  const dialogue = shot.dialogue.map((line) => `${line.speaker_id}：${line.text}`).join("；");
-  const timeline = shot.beats.map((beat, index) => `${beat.start_second}-${beat.end_second}s: [Shot ${index + 1}] ${beat.action}`).join("\n");
-  const promptText = `${shot.h3_brief}\n\n${timeline}${dialogue ? `\n\n对白：${dialogue}` : ""}\n\noverall_soundscape：${shot.sound}\nnon_diegetic_music：${shot.music}`;
+function renderDramaBatchStatus(job) {
+  const total = Number(job.total_shots || 0);
+  const completed = Number(job.completed_shots || 0);
+  const percent = total ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+  dramaElements.batchProgress.hidden = false;
+  dramaElements.batchProgressCount.textContent = `${completed} / ${total}`;
+  dramaElements.batchProgressBar.style.width = `${percent}%`;
+  dramaElements.batchProgressLabel.textContent = job.state === "complete"
+    ? "全部镜头已完成"
+    : job.state === "error" ? "生成已安全停止" : `后台制作中${job.current_shot ? ` · ${job.current_shot}` : ""}`;
+  dramaElements.batchProgressDetail.textContent = job.detail || "正在等待 ComfyUI 返回进度。";
+  dramaElements.batchState.textContent = job.state === "complete"
+    ? `已完成 ${completed} 个镜头，可在结果区或 ComfyUI 输出目录查看`
+    : job.state === "error" ? "队列遇到错误，未继续消耗显卡" : "任务已交给后台，无需逐镜头操作";
+  const completedOutputs = Array.isArray(job.outputs) ? job.outputs : [];
+  dramaElements.batchResults.innerHTML = completedOutputs.map((output) => {
+    const video = (output.files || []).find((file) => ["videos", "video", "gifs"].includes(file.kind) || /\.(mp4|webm|mov|mkv|gif)$/i.test(file.filename || ""));
+    return video ? `<a href="${escapeHtml(video.url)}" target="_blank" rel="noopener"><span>${escapeHtml(output.episode_id)} · ${escapeHtml(output.shot_id)}</span><strong>查看成片</strong></a>` : "";
+  }).join("");
+}
 
-  state.duration = shot.duration_seconds;
-  state.aspect = dramaState.package.project.aspect;
-  state.quality = dramaState.package.project.quality || "balanced";
-  state.reference = null;
-  state.referenceMode = "first_frame";
-  state.beatDrafts = {};
-  elements.referenceInput.value = "";
-  elements.referencePreview.removeAttribute("src");
-  elements.uploadEmpty.hidden = false;
-  elements.uploadPreview.hidden = true;
-  elements.prompt.value = promptText.slice(0, 12000);
-  elements.continuityBrief.value = `${shot.continuity_in}\n${shot.continuity_out}`.slice(0, 1200);
-  selectControl(elements.durationControl, state.duration);
-  selectControl(elements.aspectControl, state.aspect);
-  selectControl(elements.qualityControl, state.quality);
-  selectControl(elements.referenceModeControl, state.referenceMode);
-  renderBeatBuilder();
-  elements.prompt.dispatchEvent(new Event("input", { bubbles: true }));
-  switchWorkspace("video");
-  document.querySelector("#sceneSection")?.scrollIntoView({ block: "start" });
-  showToast(`${shot.id} 已送入 H3；参考图保持为空，请确认后再生成`);
+async function pollDramaBatchJob() {
+  if (!dramaState.batchJobId) return;
+  try {
+    const job = await api(`/api/short-drama/batch/${encodeURIComponent(dramaState.batchJobId)}`);
+    renderDramaBatchStatus(job);
+    if (["complete", "error"].includes(job.state)) {
+      clearTimeout(dramaState.batchPollTimer);
+      dramaState.batchPollTimer = null;
+      dramaState.batchJobId = null;
+      renderDramaAssetGate();
+      showToast(job.state === "complete" ? "整部短剧的全部镜头已生成完成" : job.detail || "短剧生成已安全停止");
+      return;
+    }
+  } catch (error) {
+    dramaElements.batchProgressDetail.textContent = `进度读取失败：${error.message}`;
+  }
+  dramaState.batchPollTimer = setTimeout(pollDramaBatchJob, 5000);
+}
+
+async function startDramaBatch() {
+  if (!dramaState.package || dramaElements.batchGenerate.disabled) return;
+  dramaElements.batchGenerate.disabled = true;
+  dramaElements.batchGenerate.textContent = "正在完成生成前检查";
+  dramaElements.batchState.textContent = "检查节点、模型、队列、显存与全部角色参考图";
+  try {
+    const result = await post("/api/short-drama/batch/start", {
+      package: dramaState.package,
+      character_assets: dramaBatchAssetPayload(),
+    });
+    dramaState.batchJobId = result.job_id;
+    updateDramaJourney(2);
+    renderDramaBatchStatus(result.job);
+    showToast(`已进入后台串行队列 · ${result.job.total_shots} 个镜头`);
+    pollDramaBatchJob();
+  } catch (error) {
+    dramaElements.batchState.textContent = "生成前检查未通过";
+    dramaElements.batchProgress.hidden = false;
+    dramaElements.batchProgressLabel.textContent = "尚未提交 ComfyUI";
+    dramaElements.batchProgressDetail.textContent = error.message;
+    renderDramaAssetGate();
+  } finally {
+    dramaElements.batchGenerate.textContent = "一键生成全部镜头";
+  }
 }
 
 function safeDramaFilename(extension) {
@@ -1764,10 +1936,26 @@ function bindShortDrama() {
     renderDramaLedger();
     renderDramaView();
   });
-  dramaElements.view.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-shot-handoff]");
-    if (button) handoffDramaShot(Number(button.dataset.sceneIndex), Number(button.dataset.shotIndex));
+  dramaElements.characterAssets.addEventListener("click", (event) => {
+    const upload = event.target.closest("button[data-character-upload]");
+    if (upload) {
+      dramaState.pendingCharacterId = upload.dataset.characterUpload;
+      dramaElements.characterInput.click();
+      return;
+    }
+    const approve = event.target.closest("button[data-character-approve]");
+    if (approve) {
+      const asset = dramaState.characterAssets[approve.dataset.characterApprove];
+      if (!asset?.token) return;
+      asset.approved = !asset.approved;
+      renderDramaAssetGate();
+      showToast(asset.approved ? "角色形象已确认" : "已取消角色确认");
+    }
   });
+  dramaElements.characterInput.addEventListener("change", () => {
+    uploadDramaCharacterAsset(dramaElements.characterInput.files?.[0], dramaState.pendingCharacterId);
+  });
+  dramaElements.batchGenerate.addEventListener("click", startDramaBatch);
   dramaElements.exportJson.addEventListener("click", () => {
     if (!dramaState.package) return;
     downloadDramaFile(JSON.stringify(dramaState.package, null, 2), "application/json;charset=utf-8", safeDramaFilename("json"));

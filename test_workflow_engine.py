@@ -161,9 +161,25 @@ class WorkflowEngineTests(unittest.TestCase):
         self.assertNotIn("baseUrl", draft_writer)
         self.assertNotIn("api_key", draft_writer)
         self.assertNotIn("generation.model", draft_writer)
-        self.assertIn("data-shot-handoff", javascript)
-        self.assertIn("function handoffDramaShot", javascript)
-        self.assertIn("shot.beats.map", javascript)
+        self.assertIn("function renderDramaAssetGate", javascript)
+        self.assertIn("function startDramaBatch", javascript)
+        self.assertIn("/api/short-drama/batch/start", javascript)
+        self.assertIn("for (const beat of shot.beats)", javascript)
+
+    def test_short_drama_guides_first_time_creators_and_accepts_custom_genre_and_style(self) -> None:
+        root = Path(__file__).resolve().parent
+        html = (root / "index.html").read_text(encoding="utf-8")
+        javascript = (root / "app.js").read_text(encoding="utf-8")
+        for marker in (
+            "dramaJourney", "dramaGenrePreset", "dramaGenreCustom", "dramaStylePreset",
+            "dramaStyleCustom", "dramaAdvancedSettings", "dramaAssetGate", "dramaBatchGenerate",
+        ):
+            self.assertIn(f'id="{marker}"', html)
+        self.assertIn("题材交给 AI 判断", html)
+        self.assertIn("风格交给 AI 设计", html)
+        self.assertIn("function composeDramaCreativeChoice", javascript)
+        self.assertIn("function renderDramaAssetGate", javascript)
+        self.assertNotIn("送入 H3 工作台", html)
 
     def test_creator_modes_share_one_ephemeral_llm_config_with_clear_key_state(self) -> None:
         root = Path(__file__).resolve().parent
@@ -506,6 +522,84 @@ non_diegetic_music: Sparse piano notes at a slow tempo with sustained low string
         for expected in ("9:16", "四川方言", "冷白实验室", "studio"):
             self.assertIn(expected, h3_brief)
 
+    def test_short_drama_accepts_ai_selected_and_custom_genre_and_style(self) -> None:
+        request = short_drama.normalise_short_drama_request(
+            {
+                "theme": "一名调查员发现自己的记忆正在被一份旧档案逐页改写。",
+                "genre": "由编剧模型根据主题判断最合适的题材；用户自定义要求：不要爱情线，重点写家族秘密",
+                "visual_style": "由编剧模型根据故事设计统一、可执行的视觉风格；用户自定义要求：手持纪实感，雨夜暖色窗光",
+                "episode_count": 1,
+                "episode_duration_seconds": 30,
+                "cast_count": 1,
+            }
+        )
+        self.assertIn("不要爱情线", request["genre"])
+        self.assertIn("手持纪实感", request["visual_style"])
+
+    def test_short_drama_batch_preflight_requires_plan_and_approved_character_assets(self) -> None:
+        with self.assertRaisesRegex(ValueError, "先生成并确认短剧方案"):
+            short_drama.preflight_short_drama_batch({}, {}, ready_snapshot())
+        package = short_drama.validate_short_drama_package(
+            self.short_drama_payload(),
+            short_drama.normalise_short_drama_request(
+                {
+                    "theme": "一名调查员发现自己的记忆正在被一份旧档案逐页改写。",
+                    "episode_count": 1,
+                    "episode_duration_seconds": 30,
+                    "cast_count": 1,
+                }
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "CHAR-01"):
+            short_drama.preflight_short_drama_batch(package, {}, ready_snapshot())
+        result = short_drama.preflight_short_drama_batch(
+            package,
+            {"CHAR-01": {"token": "h3_flow_0123456789ab.png", "approved": True}},
+            ready_snapshot(),
+        )
+        self.assertTrue(result["ready"])
+        self.assertEqual(result["execution_mode"], "serial_one_shot_at_a_time")
+        self.assertEqual(result["shot_count"], 6)
+        self.assertEqual(result["planned_shot_count"], 2)
+        self.assertFalse(result["submitted"])
+
+    def test_short_drama_batch_builds_real_ref2va_shot_without_page_handoff(self) -> None:
+        package = short_drama.validate_short_drama_package(
+            self.short_drama_payload(),
+            short_drama.normalise_short_drama_request(
+                {
+                    "theme": "一名调查员发现自己的记忆正在被一份旧档案逐页改写。",
+                    "episode_count": 1,
+                    "episode_duration_seconds": 30,
+                    "cast_count": 1,
+                    "quality": "balanced",
+                }
+            ),
+        )
+        scene = package["episodes"][0]["scenes"][0]
+        unit = short_drama.expand_short_drama_batch_units(package)[0]
+        workflow, plan = bridge.build_short_drama_shot_workflow(
+            package,
+            unit["scene"],
+            unit["shot"],
+            {"CHAR-01": {"token": "h3_flow_0123456789ab.png", "approved": True}},
+            job_id="drama_test",
+            quality="balanced",
+            seed=123,
+        )
+        self.assertEqual(workflow["100"]["class_type"], "MiniMaxH3ReferenceToVideo")
+        self.assertEqual(workflow["100"]["inputs"]["ref_images"]["ref_image_0"], ["18", 0])
+        self.assertEqual(workflow["100"]["inputs"]["length"], 124)
+        self.assertEqual(workflow["250"]["inputs"]["length"], 120)
+        self.assertIn("<Picture 1>", workflow["100"]["inputs"]["prompt"])
+        self.assertIn("video/short_drama/drama_test", workflow["271"]["inputs"]["filename_prefix"])
+        self.assertEqual(plan["reference_mode"], "identity")
+        self.assert_connections_resolve(workflow)
+
+    def test_short_drama_recognises_savevideo_mp4_when_comfy_reports_it_as_image(self) -> None:
+        self.assertTrue(bridge.is_video_output({"kind": "images", "filename": "shot_00001.mp4"}))
+        self.assertFalse(bridge.is_video_output({"kind": "images", "filename": "preview_00001.png"}))
+
     def test_short_drama_validator_rejects_wrong_episode_duration(self) -> None:
         request = short_drama.normalise_short_drama_request(
             {
@@ -522,6 +616,8 @@ non_diegetic_music: Sparse piano notes at a slow tempo with sustained low string
         with patch.dict(prompt_assistant.os.environ, {"H3_FLOW_LLM_API_KEY": "private-test-key"}, clear=False):
             status = short_drama.short_drama_status()
         self.assertFalse(status["capabilities"]["full_series_generation"])
+        self.assertTrue(status["capabilities"]["serial_batch_generation"])
+        self.assertTrue(status["capabilities"]["all_shot_batch_generation"])
         self.assertNotIn("private-test-key", str(status))
 
     def test_short_drama_generation_uses_json_mode_without_leaking_key(self) -> None:

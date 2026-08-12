@@ -349,11 +349,17 @@
       <section class="drama-planner" aria-labelledby="dramaTitle">
         <header class="drama-hero">
           <div>
-            <p class="eyebrow">SERIES BLUEPRINT / LOCAL FIRST</p>
-            <h1 id="dramaTitle">从一个主题，<span>展开整季制片台账。</span></h1>
+            <p class="eyebrow">AI SHORT DRAMA / LOCAL FIRST</p>
+            <h1 id="dramaTitle">说一个故事，<span>AI 帮你完成整部短剧。</span></h1>
           </div>
-          <p>AI 先写剧本、分集、场次与镜头，再由本机逐镜头送入 H3；制片包生成不会触发 ComfyUI。</p>
+          <p>先生成剧本与角色方案。你只需确认主角参考图，系统便会在后台按显存安全顺序生成全部镜头。</p>
         </header>
+
+        <ol class="drama-journey" id="dramaJourney" aria-label="短剧创作流程">
+          <li class="is-current"><span>01</span><div><strong>说故事</strong><small>主题、集数、时长</small></div></li>
+          <li><span>02</span><div><strong>确认角色</strong><small>主角形象与一致性</small></div></li>
+          <li><span>03</span><div><strong>一键生成</strong><small>后台串行制作全部镜头</small></div></li>
+        </ol>
 
         <form class="drama-form" id="dramaForm" novalidate>
           <section class="drama-form__section drama-form__section--brief">
@@ -368,41 +374,47 @@
             </label>
             <div class="drama-field-grid">
               <label class="drama-field" for="dramaWorkingTitle"><span>暂定剧名 <small>可空</small></span><input id="dramaWorkingTitle" type="text" maxlength="80" placeholder="交给 AI 命名" /></label>
-              <label class="drama-field" for="dramaGenre"><span>类型</span><select id="dramaGenre"><option>都市悬疑</option><option>情感剧情</option><option>职场逆袭</option><option>轻喜剧</option><option>古装传奇</option><option>科幻奇想</option></select></label>
               <label class="drama-field" for="dramaEpisodeCount"><span>集数 <small>1–8 集</small></span><input id="dramaEpisodeCount" type="number" min="1" max="8" step="1" value="3" /></label>
               <label class="drama-field" for="dramaEpisodeDuration"><span>每集时长</span><select id="dramaEpisodeDuration"><option value="30">30 秒</option><option value="60" selected>60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option></select></label>
             </div>
+            <div class="drama-creative-choices">
+              <div class="drama-creative-choice">
+                <label class="drama-field" for="dramaGenrePreset"><span>故事题材</span><select id="dramaGenrePreset"><option value="ai" selected>题材交给 AI 判断</option><option value="都市悬疑">都市悬疑</option><option value="情感剧情">情感剧情</option><option value="职场逆袭">职场逆袭</option><option value="轻喜剧">轻喜剧</option><option value="古装传奇">古装传奇</option><option value="科幻奇想">科幻奇想</option></select></label>
+                <label class="drama-field drama-field--custom" for="dramaGenreCustom"><span>自定义题材要求 <small>可空</small></span><input id="dramaGenreCustom" type="text" maxlength="180" placeholder="例如：东北民俗 + 单元探案" /></label>
+              </div>
+              <div class="drama-creative-choice">
+                <label class="drama-field" for="dramaStylePreset"><span>画面风格</span><select id="dramaStylePreset"><option value="ai" selected>风格交给 AI 设计</option><option value="现实主义电影感">现实主义电影感</option><option value="高级商业广告感">高级商业广告感</option><option value="东方古典美学">东方古典美学</option><option value="复古胶片质感">复古胶片质感</option><option value="克制科幻现实主义">克制科幻现实主义</option></select></label>
+                <label class="drama-field drama-field--custom" for="dramaStyleCustom"><span>自定义风格要求 <small>可空</small></span><input id="dramaStyleCustom" type="text" maxlength="500" placeholder="例如：冷青夜景、手持纪实、少量霓虹" /></label>
+              </div>
+            </div>
           </section>
 
-          <section class="drama-form__section">
-            <div class="drama-section-heading">
-              <span>02</span>
-              <div><h2>制片边界</h2><p>这些参数会成为整季不可漂移的硬约束。</p></div>
-            </div>
-            <div class="drama-field-grid drama-field-grid--three">
-              <label class="drama-field" for="dramaAspect"><span>画面比例</span><select id="dramaAspect"><option value="9:16" selected>竖屏 9:16</option><option value="16:9">横屏 16:9</option><option value="1:1">方形 1:1</option></select></label>
-              <label class="drama-field" for="dramaCastCount"><span>主要角色</span><select id="dramaCastCount"><option value="1">1 人</option><option value="2">2 人</option><option value="3" selected>3 人</option><option value="4">4 人</option><option value="5">5 人</option><option value="6">6 人</option></select></label>
-              <label class="drama-field" for="dramaEndingStyle"><span>分集结尾</span><select id="dramaEndingStyle"><option value="cliffhanger" selected>悬念钩子</option><option value="closed">单集闭环</option><option value="open">开放余味</option></select></label>
-              <label class="drama-field" for="dramaDialogueDensity"><span>对白密度</span><select id="dramaDialogueDensity"><option value="lean">少对白</option><option value="balanced" selected>平衡</option><option value="dense">高密度</option></select></label>
-              <label class="drama-field" for="dramaLanguage"><span>对白语言</span><input id="dramaLanguage" type="text" maxlength="40" value="普通话" /></label>
-              <label class="drama-field" for="dramaAudience"><span>目标观众</span><input id="dramaAudience" type="text" maxlength="80" value="成年短视频观众" /></label>
-            </div>
-            <div class="drama-field-grid drama-field-grid--style">
-              <label class="drama-field" for="dramaQuality"><span>镜头交付质量</span><select id="dramaQuality"><option value="draft">快速预览</option><option value="balanced" selected>智能成片</option><option value="studio">影院精修</option></select></label>
-              <label class="drama-field" for="dramaVisualStyle"><span>统一视觉风格</span><input id="dramaVisualStyle" type="text" maxlength="500" value="现实主义电影感，克制用光，稳定人物表演" /></label>
-            </div>
-          </section>
+          <details class="drama-advanced-settings" id="dramaAdvancedSettings">
+            <summary><div><span>02</span><strong>更多要求（可选）</strong></div><small>AI 已配置推荐值</small><svg><use href="#icon-chevron"></use></svg></summary>
+            <section class="drama-form__section">
+              <div class="drama-section-heading drama-section-heading--compact"><span>02</span><div><h2>制作偏好</h2><p>不确定时保持默认即可，AI 会把它们变成整季统一约束。</p></div></div>
+              <div class="drama-field-grid drama-field-grid--three">
+                <label class="drama-field" for="dramaAspect"><span>画面比例</span><select id="dramaAspect"><option value="9:16" selected>竖屏 9:16</option><option value="16:9">横屏 16:9</option><option value="1:1">方形 1:1</option></select></label>
+                <label class="drama-field" for="dramaCastCount"><span>主要角色</span><select id="dramaCastCount"><option value="1">1 人</option><option value="2">2 人</option><option value="3" selected>3 人</option><option value="4">4 人</option><option value="5">5 人</option><option value="6">6 人</option></select></label>
+                <label class="drama-field" for="dramaEndingStyle"><span>分集结尾</span><select id="dramaEndingStyle"><option value="cliffhanger" selected>悬念钩子</option><option value="closed">单集闭环</option><option value="open">开放余味</option></select></label>
+                <label class="drama-field" for="dramaDialogueDensity"><span>对白密度</span><select id="dramaDialogueDensity"><option value="lean">少对白</option><option value="balanced" selected>平衡</option><option value="dense">高密度</option></select></label>
+                <label class="drama-field" for="dramaLanguage"><span>对白语言</span><input id="dramaLanguage" type="text" maxlength="40" value="普通话" /></label>
+                <label class="drama-field" for="dramaAudience"><span>目标观众</span><input id="dramaAudience" type="text" maxlength="80" value="成年短视频观众" /></label>
+                <label class="drama-field" for="dramaQuality"><span>镜头交付质量</span><select id="dramaQuality"><option value="draft">快速预览</option><option value="balanced" selected>智能成片</option><option value="studio">影院精修</option></select></label>
+              </div>
+            </section>
+          </details>
 
           <section class="drama-form__section drama-provider-section">
             <div class="drama-section-heading">
               <span>03</span>
-              <div><h2>编剧模型</h2><p id="dramaProviderState">正在读取你的本地配置</p></div>
+              <div><h2>生成故事方案</h2><p id="dramaProviderState">正在读取你的本地编剧模型配置</p></div>
               <span class="drama-security-state" id="dramaSecurityState">等待本页 Key</span>
             </div>
             <p class="drama-error" id="dramaError" role="alert"></p>
             <div class="drama-generate-row">
-              <div><strong id="dramaScopeLabel">3 集 × 60 秒</strong><span>先生成结构化制片包，不进入视频队列</span></div>
-              <button class="drama-generate" id="dramaGenerate" type="submit"><span id="dramaGenerateText">生成完整制片包</span><svg><use href="#icon-spark"></use></svg></button>
+              <div><strong id="dramaScopeLabel">3 集 × 60 秒</strong><span>先看剧本和角色，不会立即消耗显卡</span></div>
+              <button class="drama-generate" id="dramaGenerate" type="submit"><span id="dramaGenerateText">生成剧本与角色方案</span><svg><use href="#icon-spark"></use></svg></button>
             </div>
             <details class="drama-provider-settings" id="dramaProviderSettings">
               <summary><span>服务地址、模型与 API Key</span><small id="dramaKeyState">仅保留到关闭页面</small><svg><use href="#icon-chevron"></use></svg></summary>
@@ -419,7 +431,7 @@
 
       <section class="drama-output" aria-labelledby="dramaOutputTitle">
         <header class="drama-output__bar">
-          <div><p class="eyebrow eyebrow--dark">SEASON LEDGER</p><h2 id="dramaOutputTitle">制片包审阅台</h2></div>
+          <div><p class="eyebrow eyebrow--dark">STORY TO PRODUCTION</p><h2 id="dramaOutputTitle">短剧方案与生成中心</h2></div>
           <div class="drama-output__actions">
             <button id="dramaExportMarkdown" type="button" disabled>导出 Markdown</button>
             <button id="dramaExportJson" type="button" disabled><svg><use href="#icon-download"></use></svg>JSON</button>
@@ -429,12 +441,12 @@
         <div class="drama-empty" id="dramaEmpty">
           <div class="drama-empty__mark" aria-hidden="true"><span>01</span><i></i><span>08</span></div>
           <p class="eyebrow eyebrow--dark">WAITING FOR STORY</p>
-          <h3>这里会出现一整季，<br />不是一段空泛文案。</h3>
-          <p>角色、服装、道具、场景、分集、场次与每个 5–15 秒 H3 镜头都会建立稳定 ID，并经过本地引用与时长复检。</p>
+          <h3>写一次创意，<br />完成整部短剧。</h3>
+          <p>AI 会自动拆成剧本、角色、场景和镜头。你确认角色形象后，只需一次点击，后续镜头会在后台按顺序完成。</p>
           <ol>
-            <li><span>01</span><strong>资产圣经</strong><small>人物与状态锁定</small></li>
-            <li><span>02</span><strong>分集台账</strong><small>钩子与时长预算</small></li>
-            <li><span>03</span><strong>镜头交接</strong><small>逐条送入 H3</small></li>
+            <li><span>01</span><strong>AI 写完整方案</strong><small>剧本、分集与分镜</small></li>
+            <li><span>02</span><strong>你确认角色</strong><small>上传主角参考图</small></li>
+            <li><span>03</span><strong>一键生成</strong><small>无需逐镜头操作</small></li>
           </ol>
         </div>
 
@@ -450,11 +462,25 @@
           </nav>
           <div class="season-ledger" id="seasonLedger" aria-label="分集台账"></div>
           <div class="drama-package__view" id="dramaPackageView"></div>
-          <footer class="drama-production-gate">
-            <span>整季生成门禁</span>
-            <div><strong>暂不开放自动批量提交</strong><p>先完成角色参考资产、样片和资源验证；当前可逐镜头送入 H3 工作台。</p></div>
-            <button type="button" disabled>等待样片验证</button>
+          <section class="drama-asset-gate" id="dramaAssetGate" aria-labelledby="dramaAssetGateTitle">
+            <header>
+              <div><span>02</span><div><strong id="dramaAssetGateTitle">确认角色形象</strong><p>每个主要角色上传一张清晰参考图，H3 会在后续镜头中持续引用。</p></div></div>
+              <small id="dramaAssetSummary">等待剧本方案</small>
+            </header>
+            <div class="drama-character-assets" id="dramaCharacterAssets"></div>
+            <input id="dramaCharacterInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+          </section>
+          <footer class="drama-production-gate" id="dramaProductionGate">
+            <span>03</span>
+            <div><strong id="dramaBatchState">先确认全部主要角色</strong><p>开始后后台会逐镜头串行生成，避免并发挤爆显存；你无需留在当前页面逐个操作。</p></div>
+            <button id="dramaBatchGenerate" type="button" disabled>一键生成全部镜头</button>
           </footer>
+          <section class="drama-batch-progress" id="dramaBatchProgress" hidden>
+            <div><span id="dramaBatchProgressLabel">准备生成</span><strong id="dramaBatchProgressCount">0 / 0</strong></div>
+            <div class="drama-batch-progress__track"><span id="dramaBatchProgressBar"></span></div>
+            <p id="dramaBatchProgressDetail">正在检查模型、节点、显存和角色参考图。</p>
+            <div class="drama-batch-results" id="dramaBatchResults"></div>
+          </section>
         </article>
       </section>
     </main>

@@ -13,8 +13,8 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - No automatic third-party plugin installation.
 - Localhost-only by default, no telemetry, no personal data in the public repository.
 - Public GitHub documentation, tests, contribution, security, privacy, and license files.
-- Structured AI short-drama planning from a theme to series bible, production assets, 1–8 episode scripts, scenes, validated shots, local export, and shot-level H3 handoff.
-- Full-season video submission must remain gated behind real reference assets, pilot validation, runtime checks, and a recoverable queue.
+- Structured AI short-drama planning from a theme to series bible, production assets, 1–8 episode scripts, scenes, validated shots, local export, approved character references, and one-click serial generation of every shot.
+- Final episode assembly, bridge-restart recovery, automated continuity scoring, and release-ready full-season claims remain gated.
 
 ## Progress
 
@@ -33,8 +33,9 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - [ ] Multi-image Ref2VA UI and tag assistant.
 - [ ] Motion-context plugin security audit, installation by user, GPU validation, seam metrics, and release gate.
 - [ ] Cross-platform packaged launcher.
-- [x] AI short-drama P0 planner: user-configured model, strict local schema validation, stable asset IDs, exact episode budgets, gap-free five-second beats, local draft, season ledger, JSON / Markdown export, and shot-level H3 handoff.
-- [ ] AI short-drama P1–P4: real character / wardrobe / prop / location reference assets, pilot validation, resumable batch queue, continuity scoring, shot repair, and controlled full-series submission.
+- [x] AI short-drama guided planner: story-first defaults, AI / preset / custom genre and style, strict local schema validation, stable asset IDs, exact episode budgets, local draft, ledger, and export.
+- [x] Character reference approval and background all-shot queue: true ComfyUI upload, multi-reference Ref2VA mapping, five-second execution units, one active serial batch, one retry per unit, progress and result links.
+- [ ] Durable resume after bridge restart, episode assembly, continuity scoring, shot repair, pilot quality gate, and release-ready full-series submission.
 
 ## Verification evidence
 
@@ -93,3 +94,13 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - All short-drama creator settings are now explicit hard constraints in both the system and user messages. The selected working title is deterministically preserved, dialogue density is recorded, and genre, aspect, visual style, audience, language, dialogue density, and quality are injected into every downstream H3 shot brief.
 - Official DeepSeek JSON mode remains enabled with `response_format: {"type": "json_object"}`, an explicit JSON contract in the prompt, bounded output length, and local schema validation plus at most one repair attempt.
 - Verification: JavaScript syntax passed; 30/30 Python tests passed; live browser interception showed one shared temporary Key, 13/13 creator settings in the request, explicit ready-state feedback, and no external DeepSeek or ComfyUI generation call.
+
+## AI short-drama guided one-click shot production — 2026-08-12
+
+- Replaced the production-led form with a three-step creator journey: tell the story, confirm characters, generate all shots. Genre and visual style now support AI selection, a restrained preset, and an optional custom requirement; secondary production controls are collapsed by default.
+- Removed the primary per-shot page handoff. Each principal character now has a real local image upload and explicit approval gate. Approved tokens are mapped to ordered `<Picture n>` inputs of `MiniMaxH3ReferenceToVideo` for every scene cast member.
+- `POST /api/short-drama/batch/start` now creates one background batch. Only one batch and one H3 unit run at a time; completion releases the queue before the next unit. A unit receives one bounded retry and the batch safely stops on a second failure while preserving previous outputs.
+- Planned 10/15-second legacy shots are deterministically expanded into five-second execution units; new model instructions request five-second shots. This keeps the automatic path aligned with the known safer RTX 5080 16GB operating unit instead of relying on unsupported concurrency or a long Ref2VA decode claim.
+- The UI polls `GET /api/short-drama/batch/{job_id}`, shows shot-level progress and completed video links, and never saves character tokens or API credentials in the browser draft.
+- Truthful boundary: this release generates all shot files in one user action, but it does not yet auto-assemble episodes, persist a resumable queue across bridge restarts, or certify visual continuity. `full_series_generation` therefore remains false while `all_shot_batch_generation` is true.
+- Verification: both repository copies pass 34/34 Python tests, JavaScript syntax, Python compilation, and diff checks. A live ComfyUI 0.31.1 `object_info` validation returned zero schema errors for the 18-node Ref2VA shot graph. Playwright desktop and 390×844 mobile render checks passed. The pre-existing ComfyUI job remained running and no `/prompt` request was made.

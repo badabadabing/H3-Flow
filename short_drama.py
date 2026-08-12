@@ -26,7 +26,7 @@ Return one JSON object only. Do not use Markdown, commentary, or keys outside th
 Production rules:
 1. Every CREATIVE_INPUT field is a hard production constraint, not a suggestion. Apply theme, working_title, genre, visual_style, audience, language, episode_count, episode_duration_seconds, cast_count, aspect, ending_style, dialogue_density, and quality throughout the package. If working_title is non-empty, copy it to project.title exactly.
 2. Match episode_count, episode_duration_seconds, and cast_count exactly. Every episode must contain scenes and shots whose duration_seconds total exactly to the requested episode duration.
-3. Every shot duration_seconds must be 5, 10, or 15 so it can be compiled into MiniMax H3-safe units. Prefer 10 or 15 seconds; use 5 seconds for inserts or transitions.
+3. Every shot duration_seconds must be exactly 5 seconds. H3 can produce longer clips, but this local product deliberately uses five-second execution units to reduce 16GB VRAM failure risk and make retries isolated.
 4. Give characters, wardrobe states, props, locations, episodes, scenes, and shots stable unique IDs. Every referenced ID must exist.
 5. Preserve character identity, wardrobe, props, time of day, screen direction, injuries, weather, and object state. State changes belong in continuity_in and continuity_out.
 6. Each episode begins with a hook, advances the season conflict, and ends with ending_style. Do not pad repeated actions.
@@ -110,7 +110,7 @@ def normalise_short_drama_request(raw: dict[str, Any]) -> dict[str, Any]:
     return {
         "theme": theme,
         "working_title": str(raw.get("working_title") or "").strip()[:80],
-        "genre": _clean(raw.get("genre") or "都市剧情", label="类型", maximum=40),
+        "genre": _clean(raw.get("genre") or "都市剧情", label="类型", maximum=240),
         "visual_style": _clean(raw.get("visual_style") or "现实主义电影感，克制用光，稳定人物表演", label="视觉风格", maximum=500),
         "audience": _clean(raw.get("audience") or "成年短视频观众", label="目标观众", maximum=80),
         "language": _clean(raw.get("language") or "普通话", label="对白语言", maximum=40),
@@ -147,11 +147,133 @@ def short_drama_status() -> dict[str, Any]:
             "local_draft": True,
             "json_export": True,
             "markdown_export": True,
-            "shot_handoff": True,
+            "shot_handoff": False,
+            "serial_batch_generation": True,
+            "all_shot_batch_generation": True,
+            "final_episode_assembly": False,
+            "recoverable_batch_generation": False,
             "full_series_generation": False,
         },
         "privacy": "只向用户选择的模型服务发送短剧文字参数；不发送 API Key 之外的凭据、参考图、本机路径、硬件、模型清单或工作流。API Key 不落盘。",
     }
+
+
+def preflight_short_drama_batch(
+    package: dict[str, Any],
+    character_assets: dict[str, Any],
+    environment_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate the human approval gate before any H3 shot enters the queue."""
+    if not isinstance(package, dict) or not isinstance(package.get("episodes"), list):
+        raise ValueError("请先生成并确认短剧方案")
+    checks = package.get("checks")
+    required_checks = ("stable_ids", "references_resolved", "duration_budget_exact", "constraints_applied")
+    if not isinstance(checks, dict) or not all(checks.get(name) is True for name in required_checks):
+        raise ValueError("先生成并确认短剧方案；当前方案未通过本地连续性与时长校验")
+
+    characters = package.get("characters")
+    if not isinstance(characters, list) or not characters:
+        raise ValueError("短剧方案没有可确认的主要角色")
+    if not isinstance(character_assets, dict):
+        raise ValueError("角色参考图数据无效")
+    missing: list[str] = []
+    for character in characters:
+        character_id = str(character.get("id") or "").strip() if isinstance(character, dict) else ""
+        asset = character_assets.get(character_id)
+        if not character_id or not isinstance(asset, dict) or not str(asset.get("token") or "").strip() or asset.get("approved") is not True:
+            missing.append(character_id or "未知角色")
+    if missing:
+        raise ValueError(f"请先上传并确认角色参考图：{', '.join(missing)}")
+
+    shots = [
+        shot for episode in package["episodes"] if isinstance(episode, dict)
+        for scene in episode.get("scenes", []) if isinstance(scene, dict)
+        for shot in scene.get("shots", []) if isinstance(shot, dict)
+    ]
+    execution_units = expand_short_drama_batch_units(package)
+    if not shots or len(shots) > MAX_TOTAL_SHOTS:
+        raise ValueError(f"镜头总数必须在 1 到 {MAX_TOTAL_SHOTS} 之间")
+    invalid_duration = next((shot.get("id") for shot in shots if shot.get("duration_seconds") not in (5, 10, 15)), None)
+    if invalid_duration:
+        raise ValueError(f"{invalid_duration} 时长不是 H3 支持的 5、10 或 15 秒")
+
+    snapshot = environment_snapshot if isinstance(environment_snapshot, dict) else {}
+    comfy = snapshot.get("comfy") if isinstance(snapshot.get("comfy"), dict) else {}
+    hardware = snapshot.get("hardware") if isinstance(snapshot.get("hardware"), dict) else {}
+    models = snapshot.get("models") if isinstance(snapshot.get("models"), dict) else {}
+    blockers: list[str] = []
+    if not comfy.get("online"):
+        blockers.append("ComfyUI 未连接")
+    if int(comfy.get("queue_running") or 0) or int(comfy.get("queue_pending") or 0):
+        blockers.append("ComfyUI 当前有其他任务，请在队列空闲后开始")
+    vram = float(hardware.get("vram_total_gb") or comfy.get("vram_total_gb") or 0)
+    ram = float(hardware.get("ram_total_gb") or 0)
+    if not vram:
+        blockers.append("无法读取显存容量，已阻止盲目启动 H3")
+    elif vram < 15:
+        blockers.append(f"当前显存 {vram:g}GB，低于 H3 安全启动线 15GB")
+    if not ram:
+        blockers.append("无法读取系统内存容量，已阻止盲目启动 H3")
+    elif ram < 24:
+        blockers.append(f"当前内存 {ram:g}GB，低于 H3 安全启动线 24GB")
+    required_models = ("ref2va", "clip", "video_vae", "audio_vae")
+    absent_models = [name for name in required_models if not models.get(name)]
+    if absent_models:
+        blockers.append("缺少短剧生成模型：" + ", ".join(absent_models))
+    if blockers:
+        raise ValueError("；".join(blockers))
+
+    requested_quality = str(package.get("project", {}).get("quality") or "balanced")
+    applied_quality = requested_quality
+    if requested_quality == "studio" and (vram < 20 or any(shot["duration_seconds"] > 5 for shot in shots)):
+        applied_quality = "balanced"
+    return {
+        "ready": True,
+        "submitted": False,
+        "execution_mode": "serial_one_shot_at_a_time",
+        "episode_count": len(package["episodes"]),
+        "shot_count": len(execution_units),
+        "planned_shot_count": len(shots),
+        "character_count": len(characters),
+        "quality_requested": requested_quality,
+        "quality_applied": applied_quality,
+        "protections": [
+            "10/15 秒剧情镜头会自动拆成 5 秒显存安全单元",
+            "一次只向 ComfyUI 提交一个 5 秒 H3 单元",
+            "每个镜头完成并释放资源后才进入下一镜头",
+            "单镜头失败最多自动重试一次，之后安全停止整批任务",
+            "所有主要角色都使用用户已确认的本机参考图",
+        ],
+    }
+
+
+def expand_short_drama_batch_units(package: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expand legacy 10/15s planned shots into deterministic five-second execution units."""
+    units: list[dict[str, Any]] = []
+    for episode in package.get("episodes", []):
+        for scene in episode.get("scenes", []):
+            for shot in scene.get("shots", []):
+                duration = int(shot.get("duration_seconds") or 0)
+                beats = shot.get("beats") if isinstance(shot.get("beats"), list) else []
+                if duration not in (5, 10, 15) or len(beats) != duration // 5:
+                    raise ValueError(f"{shot.get('id', '镜头')} 无法拆成连续 5 秒安全单元")
+                dialogue = shot.get("dialogue") if isinstance(shot.get("dialogue"), list) else []
+                for index, beat in enumerate(beats, 1):
+                    unit_id = str(shot.get("id")) if len(beats) == 1 else f"{shot.get('id')}-P{index:02d}"
+                    unit = {
+                        **shot,
+                        "id": unit_id,
+                        "source_shot_id": shot.get("id"),
+                        "duration_seconds": 5,
+                        "action": str(beat.get("action") or shot.get("action") or "").strip(),
+                        "beats": [{"start_second": 0, "end_second": 5, "action": str(beat.get("action") or "").strip()}],
+                        "dialogue": [line for line_index, line in enumerate(dialogue) if line_index % len(beats) == index - 1],
+                        "continuity_in": shot.get("continuity_in") if index == 1 else f"延续 {unit_id[:-3]}P{index - 1:02d} 的离开状态与运动方向。",
+                        "continuity_out": shot.get("continuity_out") if index == len(beats) else f"以可供 {unit_id[:-3]}P{index + 1:02d} 延续的姿态、视线和运动方向结束。",
+                        "h3_brief": f"{shot.get('h3_brief')} 本执行单元只完成原镜头第 {index} 个五秒节拍：{beat.get('action')}",
+                    }
+                    units.append({"episode": episode, "scene": scene, "shot": unit})
+    return units
 
 
 def build_short_drama_messages(request: dict[str, Any]) -> list[dict[str, str]]:
