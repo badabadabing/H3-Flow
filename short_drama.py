@@ -15,6 +15,8 @@ SUPPORTED_QUALITY = ("draft", "balanced", "studio")
 MAX_EPISODES = 8
 MAX_TOTAL_SHOTS = 128
 MAX_RESPONSE_CHARACTERS = 500_000
+CHARACTER_REFERENCE_VIEWS = ("front", "three_quarter", "profile")
+MAX_H3_REFERENCE_IMAGES = 9
 
 
 SYSTEM_PROMPT = """
@@ -28,7 +30,7 @@ Production rules:
 2. Match episode_count, episode_duration_seconds, and cast_count exactly. Every episode must contain scenes and shots whose duration_seconds total exactly to the requested episode duration.
 3. Every shot duration_seconds must be exactly 5 seconds. H3 can produce longer clips, but this local product deliberately uses five-second execution units to reduce 16GB VRAM failure risk and make retries isolated.
 4. Give characters, wardrobe states, props, locations, episodes, scenes, and shots stable unique IDs. Every referenced ID must exist.
-5. Preserve character identity, wardrobe, props, time of day, screen direction, injuries, weather, and object state. State changes belong in continuity_in and continuity_out.
+5. Preserve character identity, wardrobe, props, time of day, screen direction, injuries, weather, and object state. State changes belong in continuity_in and continuity_out. Design scenes for at most three simultaneously referenced characters because every character uses three identity views and MiniMax H3 accepts at most nine reference images.
 6. Each episode begins with a hook, advances the season conflict, and ends with ending_style. Do not pad repeated actions.
 7. Dialogue must be performable within the shot duration. speaker_id must reference a character. Use language exactly. Treat dialogue_density as lean (at most one short line per shot), balanced (up to two lines), or dense (up to four concise lines when dramatically useful).
 8. visual_style and aspect must govern bible.visual_language and every h3_brief. audience must govern story clarity and intensity. quality must govern production detail: draft is economical, balanced is robust, studio is highly specific but still executable.
@@ -177,11 +179,25 @@ def preflight_short_drama_batch(
     if not isinstance(character_assets, dict):
         raise ValueError("角色参考图数据无效")
     missing: list[str] = []
+    reference_modes: dict[str, str] = {}
     for character in characters:
         character_id = str(character.get("id") or "").strip() if isinstance(character, dict) else ""
         asset = character_assets.get(character_id)
-        if not character_id or not isinstance(asset, dict) or not str(asset.get("token") or "").strip() or asset.get("approved") is not True:
+        views = asset.get("views") if isinstance(asset, dict) and isinstance(asset.get("views"), dict) else None
+        complete_views = bool(
+            views
+            and all(
+                isinstance(views.get(view), dict) and str(views[view].get("token") or "").strip()
+                for view in CHARACTER_REFERENCE_VIEWS
+            )
+        )
+        legacy_single = bool(isinstance(asset, dict) and str(asset.get("token") or "").strip())
+        if not character_id or not isinstance(asset, dict) or asset.get("approved") is not True or not (complete_views or legacy_single):
             missing.append(character_id or "未知角色")
+        elif complete_views:
+            reference_modes[character_id] = "three_view"
+        else:
+            reference_modes[character_id] = "legacy_single"
     if missing:
         raise ValueError(f"请先上传并确认角色参考图：{', '.join(missing)}")
 
@@ -196,6 +212,20 @@ def preflight_short_drama_batch(
     invalid_duration = next((shot.get("id") for shot in shots if shot.get("duration_seconds") not in (5, 10, 15)), None)
     if invalid_duration:
         raise ValueError(f"{invalid_duration} 时长不是 H3 支持的 5、10 或 15 秒")
+    crowded_scene = next(
+        (
+            scene.get("id")
+            for episode in package["episodes"]
+            for scene in episode.get("scenes", [])
+            if sum(
+                len(CHARACTER_REFERENCE_VIEWS) if reference_modes.get(character_id) == "three_view" else 1
+                for character_id in dict.fromkeys(str(item) for item in scene.get("cast_ids", []))
+            ) > MAX_H3_REFERENCE_IMAGES
+        ),
+        None,
+    )
+    if crowded_scene:
+        raise ValueError(f"{crowded_scene} 的角色参考图总数超过 H3 节点 9 张上限；完整三视图模式同场最多 3 人")
 
     snapshot = environment_snapshot if isinstance(environment_snapshot, dict) else {}
     comfy = snapshot.get("comfy") if isinstance(snapshot.get("comfy"), dict) else {}
@@ -235,6 +265,8 @@ def preflight_short_drama_batch(
         "shot_count": len(execution_units),
         "planned_shot_count": len(shots),
         "character_count": len(characters),
+        "character_reference_modes": reference_modes,
+        "identity_reference_mode": "three_view" if all(mode == "three_view" for mode in reference_modes.values()) else "mixed_legacy",
         "quality_requested": requested_quality,
         "quality_applied": applied_quality,
         "protections": [

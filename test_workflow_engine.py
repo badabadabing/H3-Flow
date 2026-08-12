@@ -596,6 +596,99 @@ non_diegetic_music: Sparse piano notes at a slow tempo with sustained low string
         self.assertEqual(plan["reference_mode"], "identity")
         self.assert_connections_resolve(workflow)
 
+    def test_short_drama_three_view_assets_are_one_subject_with_three_h3_references(self) -> None:
+        package = short_drama.validate_short_drama_package(
+            self.short_drama_payload(),
+            short_drama.normalise_short_drama_request(
+                {
+                    "theme": "一名调查员发现自己的记忆正在被一份旧档案逐页改写。",
+                    "episode_count": 1,
+                    "episode_duration_seconds": 30,
+                    "cast_count": 1,
+                }
+            ),
+        )
+        views = {
+            "front": {"token": "h3_flow_111111111111.png"},
+            "three_quarter": {"token": "h3_flow_222222222222.png"},
+            "profile": {"token": "h3_flow_333333333333.png"},
+        }
+        assets = {"CHAR-01": {"views": views, "approved": True}}
+        gate = short_drama.preflight_short_drama_batch(package, assets, ready_snapshot())
+        self.assertEqual(gate["identity_reference_mode"], "three_view")
+        unit = short_drama.expand_short_drama_batch_units(package)[0]
+        workflow, plan = bridge.build_short_drama_shot_workflow(
+            package,
+            unit["scene"],
+            unit["shot"],
+            assets,
+            job_id="drama_three_view",
+            quality="balanced",
+            seed=456,
+        )
+        self.assertEqual(plan["reference_mode"], "identity_three_view")
+        self.assertEqual(
+            workflow["100"]["inputs"]["ref_images"],
+            {"ref_image_0": ["18", 0], "ref_image_1": ["19", 0], "ref_image_2": ["20", 0]},
+        )
+        prompt = workflow["100"]["inputs"]["prompt"]
+        self.assertIn("同一个人的多视角身份参考", prompt)
+        self.assertIn("<Picture 1> front", prompt)
+        self.assertIn("<Picture 3> profile", prompt)
+        self.assert_connections_resolve(workflow)
+
+    def test_short_drama_three_view_gate_rejects_an_incomplete_character(self) -> None:
+        package = short_drama.validate_short_drama_package(
+            self.short_drama_payload(),
+            short_drama.normalise_short_drama_request(
+                {
+                    "theme": "一名调查员发现自己的记忆正在被一份旧档案逐页改写。",
+                    "episode_count": 1,
+                    "episode_duration_seconds": 30,
+                    "cast_count": 1,
+                }
+            ),
+        )
+        assets = {
+            "CHAR-01": {
+                "views": {
+                    "front": {"token": "h3_flow_111111111111.png"},
+                    "three_quarter": {"token": "h3_flow_222222222222.png"},
+                },
+                "approved": True,
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "CHAR-01"):
+            short_drama.preflight_short_drama_batch(package, assets, ready_snapshot())
+
+    def test_short_drama_three_view_gate_rejects_more_than_nine_reference_images(self) -> None:
+        package = short_drama.validate_short_drama_package(
+            self.short_drama_payload(),
+            short_drama.normalise_short_drama_request(
+                {
+                    "theme": "一名调查员发现自己的记忆正在被一份旧档案逐页改写。",
+                    "episode_count": 1,
+                    "episode_duration_seconds": 30,
+                    "cast_count": 1,
+                }
+            ),
+        )
+        base_character = package["characters"][0]
+        package["characters"] = [
+            {**base_character, "id": f"CHAR-{index:02d}", "name": f"角色{index}"}
+            for index in range(1, 5)
+        ]
+        scene = package["episodes"][0]["scenes"][0]
+        scene["cast_ids"] = [character["id"] for character in package["characters"]]
+        views = {
+            "front": {"token": "h3_flow_111111111111.png"},
+            "three_quarter": {"token": "h3_flow_222222222222.png"},
+            "profile": {"token": "h3_flow_333333333333.png"},
+        }
+        assets = {character["id"]: {"views": views, "approved": True} for character in package["characters"]}
+        with self.assertRaisesRegex(ValueError, "9 张上限"):
+            short_drama.preflight_short_drama_batch(package, assets, ready_snapshot())
+
     def test_short_drama_recognises_savevideo_mp4_when_comfy_reports_it_as_image(self) -> None:
         self.assertTrue(bridge.is_video_output({"kind": "images", "filename": "shot_00001.mp4"}))
         self.assertFalse(bridge.is_video_output({"kind": "images", "filename": "preview_00001.png"}))

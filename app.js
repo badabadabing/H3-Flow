@@ -1207,6 +1207,11 @@ refreshPromptAssistantStatus();
 
 const DRAMA_DRAFT_KEY = "h3-flow:short-drama-project:v1";
 const WORKSPACE_MODE_KEY = "h3-flow:workspace-mode:v1";
+const DRAMA_CHARACTER_VIEWS = [
+  { id: "front", label: "正面", hint: "脸部与全身" },
+  { id: "three_quarter", label: "3/4 侧面", hint: "约 45° 转身" },
+  { id: "profile", label: "全侧面", hint: "完整轮廓" },
+];
 const dramaState = {
   package: null,
   status: null,
@@ -1215,6 +1220,7 @@ const dramaState = {
   episodeIndex: 0,
   characterAssets: {},
   pendingCharacterId: null,
+  pendingCharacterView: null,
   batchJobId: null,
   batchPollTimer: null,
 };
@@ -1587,7 +1593,7 @@ function renderDramaAssets() {
 function dramaApprovedCharacterCount() {
   return (dramaState.package?.characters || []).filter((character) => {
     const asset = dramaState.characterAssets[character.id];
-    return Boolean(asset?.token && asset.approved);
+    return Boolean(asset?.approved && DRAMA_CHARACTER_VIEWS.every(({ id }) => asset?.views?.[id]?.token));
   }).length;
 }
 
@@ -1606,19 +1612,27 @@ function renderDramaAssetGate() {
     ? `已确认 ${approved} / ${characters.length}`
     : "等待剧本方案";
   dramaElements.characterAssets.innerHTML = characters.map((character) => {
-    const asset = dramaState.characterAssets[character.id];
-    const stateLabel = asset?.approved ? "已确认" : asset?.token ? "待你确认" : "待上传";
-    const preview = asset?.previewUrl
-      ? `<img src="${escapeHtml(asset.previewUrl)}" alt="${escapeHtml(character.name)} 的角色参考图" />`
-      : `<div class="drama-character-asset__placeholder"><span>${escapeHtml(character.id)}</span><small>清晰正脸或半身照</small></div>`;
+    const asset = dramaState.characterAssets[character.id] || { views: {}, approved: false };
+    const uploaded = DRAMA_CHARACTER_VIEWS.filter(({ id }) => asset.views?.[id]?.token).length;
+    const complete = uploaded === DRAMA_CHARACTER_VIEWS.length;
+    const stateLabel = asset.approved ? "三视图已锁定" : complete ? "待确认" : `${uploaded} / 3`;
+    const previews = DRAMA_CHARACTER_VIEWS.map((view) => {
+      const reference = asset.views?.[view.id];
+      return `<button type="button" class="drama-character-view ${reference?.token ? "has-image" : ""}" data-character-upload="${escapeHtml(character.id)}" data-character-view="${view.id}">
+        <span class="drama-character-view__image">${reference?.previewUrl
+          ? `<img src="${escapeHtml(reference.previewUrl)}" alt="${escapeHtml(character.name)} ${view.label}参考图" />`
+          : `<span>${view.label}</span>`}</span>
+        <span class="drama-character-view__meta"><strong>${view.label}</strong><small>${reference?.token ? "点击替换" : view.hint}</small></span>
+      </button>`;
+    }).join("");
     return `<article class="drama-character-asset ${asset?.approved ? "is-approved" : ""}">
-      <div class="drama-character-asset__media">${preview}<span>${stateLabel}</span></div>
+      <div class="drama-character-asset__header"><div><small>${escapeHtml(character.id)} · ${escapeHtml(character.role)}</small><strong>${escapeHtml(character.name)}</strong></div><span>${stateLabel}</span></div>
+      <div class="drama-character-views">${previews}</div>
       <div class="drama-character-asset__body">
-        <div><small>${escapeHtml(character.id)} · ${escapeHtml(character.role)}</small><strong>${escapeHtml(character.name)}</strong></div>
         <p>${escapeHtml(character.appearance)}</p>
         <div class="drama-character-asset__actions">
-          <button type="button" data-character-upload="${escapeHtml(character.id)}">${asset?.token ? "更换参考图" : "上传参考图"}</button>
-          ${asset?.token ? `<button type="button" class="is-primary" data-character-approve="${escapeHtml(character.id)}">${asset.approved ? "取消确认" : "确认此形象"}</button>` : ""}
+          <small>三张图会作为同一个角色的身份证据同时进入 H3，不会生成三个人。</small>
+          <button type="button" class="is-primary" data-character-approve="${escapeHtml(character.id)}" ${complete ? "" : "disabled"}>${asset.approved ? "取消角色锁定" : "确认三视图并锁定"}</button>
         </div>
       </div>
     </article>`;
@@ -1632,8 +1646,8 @@ function renderDramaAssetGate() {
   updateDramaJourney(allApproved ? 2 : characters.length ? 1 : 0);
 }
 
-async function uploadDramaCharacterAsset(file, characterId) {
-  if (!file || !characterId) return;
+async function uploadDramaCharacterAsset(file, characterId, viewId) {
+  if (!file || !characterId || !DRAMA_CHARACTER_VIEWS.some(({ id }) => id === viewId)) return;
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
     showToast("角色参考图仅支持 JPG、PNG 或 WebP");
     return;
@@ -1642,7 +1656,8 @@ async function uploadDramaCharacterAsset(file, characterId) {
     showToast("角色参考图必须小于 12MB");
     return;
   }
-  dramaState.characterAssets[characterId] = { uploading: true, approved: false };
+  const asset = dramaState.characterAssets[characterId] || { views: {}, approved: false };
+  dramaState.characterAssets[characterId] = { ...asset, views: { ...asset.views }, uploading: viewId, approved: false };
   renderDramaAssetGate();
   try {
     const data = await new Promise((resolve, reject) => {
@@ -1653,20 +1668,27 @@ async function uploadDramaCharacterAsset(file, characterId) {
     });
     const { reference } = await post("/api/upload", { filename: file.name, data });
     const prior = dramaState.characterAssets[characterId];
-    if (prior?.previewUrl) URL.revokeObjectURL(prior.previewUrl);
+    if (prior?.views?.[viewId]?.previewUrl) URL.revokeObjectURL(prior.views[viewId].previewUrl);
     dramaState.characterAssets[characterId] = {
-      ...reference,
-      previewUrl: URL.createObjectURL(file),
+      ...prior,
+      uploading: null,
+      views: {
+        ...prior.views,
+        [viewId]: { ...reference, previewUrl: URL.createObjectURL(file) },
+      },
       approved: false,
     };
     renderDramaAssetGate();
-    showToast(`${characterId} 参考图已真实上传到本机 ComfyUI，请确认形象`);
+    showToast(`${characterId} ${DRAMA_CHARACTER_VIEWS.find(({ id }) => id === viewId).label}已上传；三张齐全后可锁定角色`);
   } catch (error) {
-    delete dramaState.characterAssets[characterId];
+    const failed = dramaState.characterAssets[characterId];
+    if (failed) failed.uploading = null;
     renderDramaAssetGate();
     showToast(error.message);
   } finally {
     dramaElements.characterInput.value = "";
+    dramaState.pendingCharacterId = null;
+    dramaState.pendingCharacterView = null;
   }
 }
 
@@ -1771,10 +1793,12 @@ async function generateDramaPackage(event) {
 
 function dramaBatchAssetPayload() {
   return Object.fromEntries(Object.entries(dramaState.characterAssets).map(([id, asset]) => [id, {
-    token: asset.token,
-    original_name: asset.original_name,
-    width: asset.width,
-    height: asset.height,
+    views: Object.fromEntries(DRAMA_CHARACTER_VIEWS.map((view) => [view.id, asset.views?.[view.id] ? {
+      token: asset.views[view.id].token,
+      original_name: asset.views[view.id].original_name,
+      width: asset.views[view.id].width,
+      height: asset.views[view.id].height,
+    } : null])),
     approved: Boolean(asset.approved),
   }]));
 }
@@ -1946,20 +1970,21 @@ function bindShortDrama() {
     const upload = event.target.closest("button[data-character-upload]");
     if (upload) {
       dramaState.pendingCharacterId = upload.dataset.characterUpload;
+      dramaState.pendingCharacterView = upload.dataset.characterView;
       dramaElements.characterInput.click();
       return;
     }
     const approve = event.target.closest("button[data-character-approve]");
     if (approve) {
       const asset = dramaState.characterAssets[approve.dataset.characterApprove];
-      if (!asset?.token) return;
+      if (!asset || !DRAMA_CHARACTER_VIEWS.every(({ id }) => asset.views?.[id]?.token)) return;
       asset.approved = !asset.approved;
       renderDramaAssetGate();
-      showToast(asset.approved ? "角色形象已确认" : "已取消角色确认");
+      showToast(asset.approved ? "角色三视图已锁定" : "已取消角色锁定");
     }
   });
   dramaElements.characterInput.addEventListener("change", () => {
-    uploadDramaCharacterAsset(dramaElements.characterInput.files?.[0], dramaState.pendingCharacterId);
+    uploadDramaCharacterAsset(dramaElements.characterInput.files?.[0], dramaState.pendingCharacterId, dramaState.pendingCharacterView);
   });
   dramaElements.batchGenerate.addEventListener("click", startDramaBatch);
   dramaElements.exportJson.addEventListener("click", () => {

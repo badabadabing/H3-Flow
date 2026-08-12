@@ -28,7 +28,7 @@ from typing import Any
 from PIL import Image, UnidentifiedImageError
 
 from prompt_assistant import prompt_assistant_status, rewrite_h3_prompt
-from short_drama import expand_short_drama_batch_units, generate_short_drama, preflight_short_drama_batch, short_drama_status
+from short_drama import CHARACTER_REFERENCE_VIEWS, expand_short_drama_batch_units, generate_short_drama, preflight_short_drama_batch, short_drama_status
 
 
 STATIC_ROOT = Path(__file__).resolve().parent
@@ -698,16 +698,29 @@ def build_short_drama_shot_workflow(
     cast_ids = list(dict.fromkeys(str(item) for item in scene.get("cast_ids", [])))
     if not cast_ids or len(cast_ids) > 9:
         raise ValueError(f"{scene.get('id', '场景')} 需要 1 到 9 个可引用角色")
-    references: list[tuple[str, dict[str, Any], str]] = []
+    references: list[tuple[str, dict[str, Any], list[tuple[str, str]]]] = []
     for character_id in cast_ids:
         character = character_map.get(character_id)
         asset = character_assets.get(character_id)
         if not character or not isinstance(asset, dict) or asset.get("approved") is not True:
             raise ValueError(f"{shot.get('id')} 缺少已确认的 {character_id} 参考图")
-        token = str(asset.get("token") or "").strip()
-        if not REFERENCE_TOKEN.fullmatch(token):
-            raise ValueError(f"{character_id} 参考图令牌无效，请重新上传")
-        references.append((character_id, character, token))
+        views = asset.get("views") if isinstance(asset.get("views"), dict) else None
+        view_tokens: list[tuple[str, str]] = []
+        if views:
+            for view in CHARACTER_REFERENCE_VIEWS:
+                value = views.get(view)
+                token = str(value.get("token") or "").strip() if isinstance(value, dict) else ""
+                if not REFERENCE_TOKEN.fullmatch(token):
+                    raise ValueError(f"{character_id} 的 {view} 三视图令牌无效，请重新上传")
+                view_tokens.append((view, token))
+        else:
+            token = str(asset.get("token") or "").strip()
+            if not REFERENCE_TOKEN.fullmatch(token):
+                raise ValueError(f"{character_id} 参考图令牌无效，请重新上传")
+            view_tokens.append(("legacy", token))
+        references.append((character_id, character, view_tokens))
+    if sum(len(view_tokens) for _, _, view_tokens in references) > 9:
+        raise ValueError(f"{scene.get('id', '场景')} 的角色参考图超过 H3 节点 9 张上限")
 
     wardrobe_map = {
         wardrobe["id"]: (character["id"], wardrobe)
@@ -723,14 +736,17 @@ def build_short_drama_shot_workflow(
 
     definitions = []
     retention = []
-    for index, (character_id, character, _token) in enumerate(references, 1):
+    picture_index = 1
+    for character_id, character, view_tokens in references:
+        picture_labels = ", ".join(f"<Picture {picture_index + offset}> {view}" for offset, (view, _token) in enumerate(view_tokens))
         definitions.append(
-            f"<Subject {index}> 是 {character.get('name')}（{character_id}），以 <Picture {index}> 为唯一脸部、发型、年龄与体态身份参考；"
+            f"<Subject {character_id}> 是 {character.get('name')}（{character_id}），{picture_labels} 是同一个人的多视角身份参考，不是不同角色；"
             f"固定外观：{character.get('appearance', '')}"
         )
         retention.append(
-            f"<Subject {index}>：完整保留 <Picture {index}> 的身份特征；动作、表情、服装与场景按本镜头要求变化，不改变人物身份。"
+            f"<Subject {character_id}>：综合同一人物的 {picture_labels} 锁定正脸、侧脸、体态与服装；动作、表情和场景可变，人物身份不可改变。"
         )
+        picture_index += len(view_tokens)
     dialogue = "；".join(f"{line.get('speaker_id')}：{line.get('text')}" for line in shot.get("dialogue", [])) or "无对白"
     beats = "\n".join(
         f"{beat.get('start_second')}-{beat.get('end_second')}秒：[Shot {index}] {beat.get('action')}"
@@ -780,10 +796,13 @@ def build_short_drama_shot_workflow(
             "target_peak_dbfs": -1.0, "max_makeup_db": 3.0, "audio1": ["200", 0],
         }},
     }
-    for index, (_character_id, _character, token) in enumerate(references):
-        load_id = str(18 + index)
-        workflow[load_id] = {"class_type": "LoadImage", "inputs": {"image": token}}
-        workflow["100"]["inputs"]["ref_images"][f"ref_image_{index}"] = [load_id, 0]
+    reference_index = 0
+    for _character_id, _character, view_tokens in references:
+        for _view, token in view_tokens:
+            load_id = str(18 + reference_index)
+            workflow[load_id] = {"class_type": "LoadImage", "inputs": {"image": token}}
+            workflow["100"]["inputs"]["ref_images"][f"ref_image_{reference_index}"] = [load_id, 0]
+            reference_index += 1
 
     output_images: list[Any] = ["250", 0]
     if quality in {"balanced", "studio"}:
@@ -812,7 +831,7 @@ def build_short_drama_shot_workflow(
     plan = {
         "ready": True,
         "blockers": [],
-        "reference_mode": "identity",
+        "reference_mode": "identity_three_view" if all(len(view_tokens) == 3 for _, _, view_tokens in references) else "identity",
         "quality_applied": quality,
         "quality_requested": str(project.get("quality") or quality),
         "duration": duration,
@@ -1292,9 +1311,13 @@ def start_short_drama_batch(payload: dict[str, Any]) -> dict[str, Any]:
     snapshot = environment_snapshot(force=True)
     gate = preflight_short_drama_batch(package, character_assets, snapshot)
     for character_id, asset in character_assets.items():
-        token = str(asset.get("token") or "").strip() if isinstance(asset, dict) else ""
-        if not REFERENCE_TOKEN.fullmatch(token):
-            raise ValueError(f"{character_id} 参考图令牌无效，请重新上传")
+        views = asset.get("views") if isinstance(asset, dict) and isinstance(asset.get("views"), dict) else None
+        tokens = [
+            str(views.get(view, {}).get("token") or "").strip()
+            for view in CHARACTER_REFERENCE_VIEWS
+        ] if views else [str(asset.get("token") or "").strip() if isinstance(asset, dict) else ""]
+        if not tokens or any(not REFERENCE_TOKEN.fullmatch(token) for token in tokens):
+            raise ValueError(f"{character_id} 三视图参考令牌无效，请重新上传")
     with DRAMA_BATCH_LOCK:
         if DRAMA_BATCH_ACTIVE:
             active = DRAMA_BATCH_JOBS.get(DRAMA_BATCH_ACTIVE, {})

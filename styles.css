@@ -1297,28 +1297,38 @@ body[data-mode="drama"] .mobile-review-dock {
 .drama-character-assets { display: grid; gap: 8px; }
 .drama-character-asset {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
   gap: 11px;
   padding: 9px;
   background: #20231f;
   border: 1px solid #353a33;
 }
 .drama-character-asset.is-approved { border-color: #627a42; }
-.drama-character-asset__media { position: relative; min-height: 90px; overflow: hidden; background: #131612; }
-.drama-character-asset__media img { width: 100%; height: 100%; min-height: 90px; object-fit: cover; }
-.drama-character-asset__media > span { position: absolute; left: 5px; bottom: 5px; padding: 3px 5px; color: var(--paper); background: rgba(17, 20, 16, .84); font-size: 7px; }
-.drama-character-asset.is-approved .drama-character-asset__media > span { color: var(--ink); background: var(--accent); }
-.drama-character-asset__placeholder { display: grid; place-content: center; gap: 4px; height: 100%; text-align: center; }
-.drama-character-asset__placeholder span { color: var(--accent); font: 10px var(--font-mono); }
-.drama-character-asset__placeholder small { color: #747a70; font-size: 7px; }
+.drama-character-asset__header { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+.drama-character-asset__header > div { display: grid; gap: 2px; }
+.drama-character-asset__header small { color: #8e9488; font-size: 7px; }
+.drama-character-asset__header strong { font-size: 10px; }
+.drama-character-asset__header > span { padding: 3px 6px; color: #a4a99f; border: 1px solid #43493f; font: 7px var(--font-mono); }
+.drama-character-asset.is-approved .drama-character-asset__header > span { color: var(--ink); background: var(--accent); border-color: var(--accent); }
+.drama-character-views { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.drama-character-view { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 7px; align-items: center; min-width: 0; padding: 5px; color: #a4a99f; text-align: left; background: #151814; border: 1px solid #383d36; border-radius: var(--radius-sm); }
+.drama-character-view:hover { color: var(--paper); border-color: #687062; }
+.drama-character-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.drama-character-view.has-image { border-color: #556044; }
+.drama-character-view__image { display: grid; place-content: center; width: 56px; aspect-ratio: 3 / 4; overflow: hidden; color: var(--accent); background: #0e110e; font: 7px var(--font-mono); }
+.drama-character-view__image img { width: 100%; height: 100%; object-fit: cover; }
+.drama-character-view__meta { display: grid; gap: 3px; min-width: 0; }
+.drama-character-view__meta strong { font-size: 8px; }
+.drama-character-view__meta small { overflow: hidden; color: #747a70; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .drama-character-asset__body { display: grid; gap: 7px; min-width: 0; }
 .drama-character-asset__body > div:first-child { display: grid; gap: 2px; }
 .drama-character-asset__body small { color: #8e9488; font-size: 7px; }
 .drama-character-asset__body strong { font-size: 10px; }
 .drama-character-asset__body p { display: -webkit-box; margin: 0; overflow: hidden; color: #a4a99f; font-size: 8px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.drama-character-asset__actions { display: flex; gap: 6px; align-items: end; }
+.drama-character-asset__actions { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.drama-character-asset__actions > small { max-width: 360px; color: #777d73; font-size: 7px; line-height: 1.45; }
 .drama-character-asset__actions button { min-height: 30px; padding: 0 8px; color: #c2c7bb; background: transparent; border: 1px solid #4a5047; border-radius: var(--radius-sm); font-size: 8px; }
 .drama-character-asset__actions button.is-primary { color: var(--ink); background: var(--accent); border-color: var(--accent); font-weight: 720; }
+.drama-character-asset__actions button:disabled { color: #6f746b; background: #292d27; border-color: #343832; cursor: not-allowed; }
 
 .drama-production-gate {
   display: grid;
@@ -1574,7 +1584,7 @@ body[data-mode="drama"] .mobile-review-dock {
   .drama-journey li small { display: none; }
   .drama-advanced-settings > summary { padding: 0 15px; }
   .drama-advanced-settings > summary small { display: none; }
-  .drama-character-asset { grid-template-columns: 76px minmax(0, 1fr); }
+  .drama-character-views { grid-template-columns: 1fr; }
   .drama-character-asset__actions { align-items: stretch; flex-direction: column; }
   .drama-shot__queued { grid-column: 1 / -1; }
 
