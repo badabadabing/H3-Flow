@@ -47,6 +47,16 @@
         <span class="brand__name">H3 Flow</span>
         <span class="brand__descriptor">自动工作流制片台</span>
       </a>
+      <nav class="workspace-modes" id="workspaceModes" aria-label="工作模式">
+        <button type="button" data-mode="video" class="is-selected" aria-pressed="true">单条视频</button>
+        <button type="button" data-mode="drama" aria-pressed="false">AI 短剧</button>
+      </nav>
+      <nav class="studio-steps" id="studioSteps" aria-label="创作流程">
+        <button type="button" data-scroll-target="sceneSection" aria-current="step"><span>01</span><strong>创意简报</strong><i></i></button>
+        <button type="button" data-scroll-target="formatSection"><span>02</span><strong>分镜节拍</strong><i></i></button>
+        <button type="button" data-scroll-target="qualitySection"><span>03</span><strong>交付质量</strong><i></i></button>
+        <button type="button" data-scroll-target="planPanel"><span>04</span><strong>生成总检</strong><i></i></button>
+      </nav>
       <div class="appbar__actions">
         <span class="local-note">仅在本机运行</span>
         <button class="connection" id="connectionButton" type="button" aria-label="查看 ComfyUI 连接状态">
@@ -56,7 +66,7 @@
       </div>
     </header>
 
-    <main class="workspace">
+    <main class="workspace" id="videoWorkspace">
       <section class="creator" aria-labelledby="pageTitle">
         <div class="hero-copy">
           <p class="eyebrow">AI VIDEO ORCHESTRATOR / MINIMAX H3</p>
@@ -65,7 +75,7 @@
         </div>
 
         <form class="flow-form" id="flowForm" novalidate>
-          <section class="flow-section" aria-labelledby="sceneHeading">
+          <section class="flow-section" id="sceneSection" aria-labelledby="sceneHeading">
             <div class="section-index" aria-hidden="true">01</div>
             <div class="section-content">
               <div class="section-heading">
@@ -73,7 +83,11 @@
                   <h2 id="sceneHeading">描述你想看到的画面</h2>
                   <p>像给摄影师讲戏一样写；镜头、动作、光线和声音越明确，结果越稳定。</p>
                 </div>
-                <span class="field-count" id="promptCount">0 / 12000</span>
+                <div class="field-meta">
+                  <span class="draft-state" id="draftState">本机草稿</span>
+                  <button class="new-draft" id="newDraftButton" type="button">新建</button>
+                  <span class="field-count" id="promptCount">0 / 12000</span>
+                </div>
               </div>
               <label class="sr-only" for="prompt">视频提示词</label>
               <div class="prompt-shell">
@@ -84,10 +98,28 @@
                     <button type="button" data-template="commercial">产品广告</button>
                     <button type="button" data-template="portrait">人物表演</button>
                     <button type="button" data-template="atmosphere">氛围镜头</button>
+                    <button type="button" data-template="shortform">知识口播</button>
                   </div>
+                  <button class="prompt-assistant-open" id="promptAssistantOpen" type="button">
+                    <svg aria-hidden="true"><use href="#icon-spark"></use></svg>
+                    <span><strong>AI 提示词编导</strong><small>按 H3 官方格式重写</small></span>
+                  </button>
                 </div>
               </div>
+              <div class="brief-health" id="briefHealth" aria-live="polite">
+                <div class="brief-health__header">
+                  <div><span>创意简报完整度</span><small id="briefGuidance">先写清主体与正在发生的动作</small></div>
+                  <strong id="briefScore">0 / 4</strong>
+                </div>
+                <ul id="briefChecks" aria-label="创意简报检查项">
+                  <li data-brief-check="subject"><i></i><span><strong>主体</strong><small>谁或什么是画面核心</small></span></li>
+                  <li data-brief-check="action"><i></i><span><strong>动作</strong><small>主体如何变化或移动</small></span></li>
+                  <li data-brief-check="camera"><i></i><span><strong>镜头</strong><small>景别、机位或运动方向</small></span></li>
+                  <li data-brief-check="sound"><i></i><span><strong>声音</strong><small>环境声、对白或配乐</small></span></li>
+                </ul>
+              </div>
               <p class="field-error" id="promptError" role="alert"></p>
+              <p class="timeline-hint" id="timelineHint" hidden></p>
 
               <div class="reference-block">
                 <div class="reference-copy">
@@ -118,24 +150,43 @@
             </div>
           </section>
 
-          <section class="flow-section" aria-labelledby="formatHeading">
+          <section class="flow-section" id="formatSection" aria-labelledby="formatHeading">
             <div class="section-index" aria-hidden="true">02</div>
             <div class="section-content">
               <div class="section-heading compact">
                 <div>
                   <h2 id="formatHeading">决定成片节奏</h2>
-                  <p>时长越长，系统会拆成更多安全片段并自动续接。</p>
+                  <p>时长越长，系统会拆成更多安全片段；长视频需要为每 5 秒写明剧情时间段。</p>
                 </div>
               </div>
               <fieldset class="control-group">
                 <legend>视频时长</legend>
                 <div class="segmented segmented--duration" id="durationControl">
-                  <button type="button" data-value="5"><strong>5</strong><span>秒</span></button>
-                  <button type="button" data-value="10" class="is-selected"><strong>10</strong><span>秒</span></button>
+                  <button type="button" data-value="5" class="is-selected"><strong>5</strong><span>秒</span></button>
+                  <button type="button" data-value="10"><strong>10</strong><span>秒</span></button>
                   <button type="button" data-value="15"><strong>15</strong><span>秒</span></button>
                   <button type="button" data-value="30"><strong>30</strong><span>秒</span></button>
                 </div>
               </fieldset>
+              <section class="beat-builder" id="beatBuilder" aria-labelledby="beatBuilderTitle" hidden>
+                <div class="beat-builder__header">
+                  <div>
+                    <span class="beat-builder__eyebrow">LONG VIDEO STORYBOARD</span>
+                    <h3 id="beatBuilderTitle">逐段写清，不再手敲时间码</h3>
+                    <p>每 5 秒只写这一段发生的新动作；系统会自动整理成可校验时间线。</p>
+                  </div>
+                  <strong id="beatProgress">0 / 0 段</strong>
+                </div>
+                <label class="continuity-brief" for="continuityBrief">
+                  <span><strong>全片连续要求</strong><small>可选，只写跨段不变的事实</small></span>
+                  <textarea id="continuityBrief" rows="2" maxlength="1200" placeholder="例如：同一位成年咖啡师、深色围裙、清晨冷光；环境雨声持续，不要配乐。"></textarea>
+                </label>
+                <div class="beat-rows" id="beatRows"></div>
+                <div class="beat-builder__actions">
+                  <p id="beatBuilderHint">补完所有片段后，才能写入主提示词并通过长视频门禁。</p>
+                  <button id="applyBeats" type="button" disabled>写入长视频简报</button>
+                </div>
+              </section>
               <fieldset class="control-group control-group--inline">
                 <legend>画面比例</legend>
                 <div class="segmented segmented--aspect" id="aspectControl">
@@ -144,10 +195,11 @@
                   <button type="button" data-value="1:1"><span class="ratio ratio--square"></span>方形 1:1</button>
                 </div>
               </fieldset>
+              <p class="format-note" id="formatNote">横屏 16:9 · 适合叙事短片、展示页与大屏观看</p>
             </div>
           </section>
 
-          <section class="flow-section" aria-labelledby="qualityHeading">
+          <section class="flow-section" id="qualitySection" aria-labelledby="qualityHeading">
             <div class="section-index" aria-hidden="true">03</div>
             <div class="section-content">
               <div class="section-heading compact">
@@ -190,7 +242,7 @@
         </form>
       </section>
 
-      <aside class="plan-panel" aria-labelledby="planTitle">
+      <aside class="plan-panel" id="planPanel" aria-labelledby="planTitle">
         <div class="plan-panel__header">
           <div>
             <p class="eyebrow eyebrow--dark">LIVE SAFETY PLAN</p>
@@ -199,15 +251,24 @@
           <span class="safety-state" id="safetyState"><span></span>正在分析</span>
         </div>
 
+        <div class="preflight-summary" id="preflightSummary" aria-live="polite">
+          <div>
+            <span>生成前总检</span>
+            <strong id="preflightLabel">正在读取本机环境</strong>
+            <p id="preflightDetail">系统会把创意、片段、模型、队列和显存结果合并成一个明确结论。</p>
+          </div>
+          <button id="fixPlanButton" type="button" hidden>回到待修项</button>
+        </div>
+
         <div class="timeline-card">
           <div class="timeline-card__header">
             <span>生成路径</span>
-            <strong id="segmentLabel">2 个安全片段</strong>
+            <strong id="segmentLabel">1 个安全片段</strong>
           </div>
           <div class="segment-track" id="segmentTrack" aria-label="视频片段计划"></div>
           <div class="timeline-card__footer">
             <span>00:00</span>
-            <span id="durationLabel">00:10</span>
+            <span id="durationLabel">00:05</span>
           </div>
         </div>
 
@@ -219,35 +280,44 @@
           <div><dt>同步声音</dt><dd>原生立体声</dd></div>
         </dl>
 
-        <div class="resource-card">
-          <div class="resource-card__title">
-            <span>本机资源</span>
-            <button id="refreshStatus" type="button">重新检测</button>
-          </div>
-          <div class="resource-row">
-            <div class="resource-row__label"><span>GPU</span><strong id="gpuValue">检测中</strong></div>
-            <div class="resource-meter"><span id="gpuMeter"></span><i></i></div>
-            <small id="gpuNote">为工作流保留 1.5GB</small>
-          </div>
-          <div class="resource-row">
-            <div class="resource-row__label"><span>系统提交</span><strong id="ramValue">检测中</strong></div>
-            <div class="resource-meter"><span id="ramMeter"></span><i></i></div>
-            <small id="ramNote">长视频解码缓冲区</small>
-          </div>
-        </div>
+        <details class="technical-plan" id="technicalPlan">
+          <summary>
+            <span><strong>本机与技术细节</strong><small>显存、提交空间、模型与版本</small></span>
+            <span id="technicalState">环境读取中</span>
+            <svg><use href="#icon-chevron"></use></svg>
+          </summary>
+          <div class="technical-plan__body">
+            <div class="resource-card">
+              <div class="resource-card__title">
+                <span>本机资源</span>
+                <button id="refreshStatus" type="button">重新检测</button>
+              </div>
+              <div class="resource-row">
+                <div class="resource-row__label"><span>GPU</span><strong id="gpuValue">检测中</strong></div>
+                <div class="resource-meter"><span id="gpuMeter"></span><i></i></div>
+                <small id="gpuNote">为工作流保留 1.5GB</small>
+              </div>
+              <div class="resource-row">
+                <div class="resource-row__label"><span>系统提交</span><strong id="ramValue">检测中</strong></div>
+                <div class="resource-meter"><span id="ramMeter"></span><i></i></div>
+                <small id="ramNote">长视频解码缓冲区</small>
+              </div>
+            </div>
 
-        <div class="compatibility-card" id="compatibilityCard" aria-live="polite">
-          <div class="compatibility-card__title">
-            <span>环境基线</span>
-            <strong id="compatibilityState">检测中</strong>
+            <div class="compatibility-card" id="compatibilityCard" aria-live="polite">
+              <div class="compatibility-card__title">
+                <span>环境基线</span>
+                <strong id="compatibilityState">检测中</strong>
+              </div>
+              <dl class="compatibility-list">
+                <div><dt>运行时</dt><dd id="runtimeCompatibility">读取中</dd></div>
+                <div><dt>核心模型</dt><dd id="baseCompatibility">读取中</dd></div>
+                <div><dt>多参考</dt><dd id="referenceCompatibility">读取中</dd></div>
+                <div><dt>潜空间续接</dt><dd id="continuityCompatibility">读取中</dd></div>
+              </dl>
+            </div>
           </div>
-          <dl class="compatibility-list">
-            <div><dt>运行时</dt><dd id="runtimeCompatibility">读取中</dd></div>
-            <div><dt>核心模型</dt><dd id="baseCompatibility">读取中</dd></div>
-            <div><dt>多参考</dt><dd id="referenceCompatibility">读取中</dd></div>
-            <div><dt>潜空间续接</dt><dd id="continuityCompatibility">读取中</dd></div>
-          </dl>
-        </div>
+        </details>
 
         <div class="plan-notice" id="planNotice" hidden>
           <svg><use href="#icon-spark"></use></svg>
@@ -274,6 +344,225 @@
         </div>
       </aside>
     </main>
+
+    <main class="drama-workspace" id="dramaWorkspace" hidden>
+      <section class="drama-planner" aria-labelledby="dramaTitle">
+        <header class="drama-hero">
+          <div>
+            <p class="eyebrow">AI SHORT DRAMA / LOCAL FIRST</p>
+            <h1 id="dramaTitle">说一个故事，<span>AI 帮你完成整部短剧。</span></h1>
+          </div>
+          <p>先生成剧本与角色方案。为主角补齐正面、3/4 侧面和全侧面三视图并确认后，系统便会在后台按显存安全顺序生成全部镜头。</p>
+        </header>
+
+        <ol class="drama-journey" id="dramaJourney" aria-label="短剧创作流程">
+          <li class="is-current"><span>01</span><div><strong>说故事</strong><small>主题、集数、时长</small></div></li>
+          <li><span>02</span><div><strong>确认角色</strong><small>主角形象与一致性</small></div></li>
+          <li><span>03</span><div><strong>一键生成</strong><small>后台串行制作全部镜头</small></div></li>
+        </ol>
+
+        <form class="drama-form" id="dramaForm" novalidate>
+          <section class="drama-form__section drama-form__section--brief">
+            <div class="drama-section-heading">
+              <span>01</span>
+              <div><h2>故事命题</h2><p>写冲突、人物和你希望观众追下去的理由。</p></div>
+              <small id="dramaDraftState">仅保存在本机</small>
+            </div>
+            <label class="drama-field drama-field--theme" for="dramaTheme">
+              <span>主题与核心冲突 <small id="dramaThemeCount">0 / 4000</small></span>
+              <textarea id="dramaTheme" rows="4" maxlength="4000" placeholder="例如：一名能听见物品记忆的旧货店老板，发现每位顾客都在寻找同一只不存在的怀表；每解开一段记忆，他自己就会忘掉一个最亲近的人。"></textarea>
+            </label>
+            <div class="drama-field-grid">
+              <label class="drama-field" for="dramaWorkingTitle"><span>暂定剧名 <small>可空</small></span><input id="dramaWorkingTitle" type="text" maxlength="80" placeholder="交给 AI 命名" /></label>
+              <label class="drama-field" for="dramaEpisodeCount"><span>集数 <small>1–8 集</small></span><input id="dramaEpisodeCount" type="number" min="1" max="8" step="1" value="3" /></label>
+              <label class="drama-field" for="dramaEpisodeDuration"><span>每集时长</span><select id="dramaEpisodeDuration"><option value="30">30 秒</option><option value="60" selected>60 秒</option><option value="90">90 秒</option><option value="120">120 秒</option></select></label>
+            </div>
+            <div class="drama-creative-choices">
+              <div class="drama-creative-choice">
+                <label class="drama-field" for="dramaGenrePreset"><span>故事题材</span><select id="dramaGenrePreset"><option value="ai" selected>题材交给 AI 判断</option><option value="都市悬疑">都市悬疑</option><option value="情感剧情">情感剧情</option><option value="职场逆袭">职场逆袭</option><option value="轻喜剧">轻喜剧</option><option value="古装传奇">古装传奇</option><option value="科幻奇想">科幻奇想</option></select></label>
+                <label class="drama-field drama-field--custom" for="dramaGenreCustom"><span>自定义题材要求 <small>可空</small></span><input id="dramaGenreCustom" type="text" maxlength="180" placeholder="例如：东北民俗 + 单元探案" /></label>
+              </div>
+              <div class="drama-creative-choice">
+                <label class="drama-field" for="dramaStylePreset"><span>画面风格</span><select id="dramaStylePreset"><option value="ai" selected>风格交给 AI 设计</option><option value="现实主义电影感">现实主义电影感</option><option value="高级商业广告感">高级商业广告感</option><option value="东方古典美学">东方古典美学</option><option value="复古胶片质感">复古胶片质感</option><option value="克制科幻现实主义">克制科幻现实主义</option></select></label>
+                <label class="drama-field drama-field--custom" for="dramaStyleCustom"><span>自定义风格要求 <small>可空</small></span><input id="dramaStyleCustom" type="text" maxlength="500" placeholder="例如：冷青夜景、手持纪实、少量霓虹" /></label>
+              </div>
+            </div>
+          </section>
+
+          <details class="drama-advanced-settings" id="dramaAdvancedSettings">
+            <summary><div><span>02</span><strong>更多要求（可选）</strong></div><small>AI 已配置推荐值</small><svg><use href="#icon-chevron"></use></svg></summary>
+            <section class="drama-form__section">
+              <div class="drama-section-heading drama-section-heading--compact"><span>02</span><div><h2>制作偏好</h2><p>不确定时保持默认即可，AI 会把它们变成整季统一约束。</p></div></div>
+              <div class="drama-field-grid drama-field-grid--three">
+                <label class="drama-field" for="dramaAspect"><span>画面比例</span><select id="dramaAspect"><option value="9:16" selected>竖屏 9:16</option><option value="16:9">横屏 16:9</option><option value="1:1">方形 1:1</option></select></label>
+                <label class="drama-field" for="dramaCastCount"><span>主要角色</span><select id="dramaCastCount"><option value="1">1 人</option><option value="2">2 人</option><option value="3" selected>3 人</option><option value="4">4 人</option><option value="5">5 人</option><option value="6">6 人</option></select></label>
+                <label class="drama-field" for="dramaEndingStyle"><span>分集结尾</span><select id="dramaEndingStyle"><option value="cliffhanger" selected>悬念钩子</option><option value="closed">单集闭环</option><option value="open">开放余味</option></select></label>
+                <label class="drama-field" for="dramaDialogueDensity"><span>对白密度</span><select id="dramaDialogueDensity"><option value="lean">少对白</option><option value="balanced" selected>平衡</option><option value="dense">高密度</option></select></label>
+                <label class="drama-field" for="dramaLanguage"><span>对白语言</span><input id="dramaLanguage" type="text" maxlength="40" value="普通话" /></label>
+                <label class="drama-field" for="dramaAudience"><span>目标观众</span><input id="dramaAudience" type="text" maxlength="80" value="成年短视频观众" /></label>
+                <label class="drama-field" for="dramaQuality"><span>镜头交付质量</span><select id="dramaQuality"><option value="draft">快速预览</option><option value="balanced" selected>智能成片</option><option value="studio">影院精修</option></select></label>
+              </div>
+            </section>
+          </details>
+
+          <section class="drama-form__section drama-provider-section">
+            <div class="drama-section-heading">
+              <span>03</span>
+              <div><h2>生成故事方案</h2><p id="dramaProviderState">正在读取你的本地编剧模型配置</p></div>
+              <span class="drama-security-state" id="dramaSecurityState">等待本页 Key</span>
+            </div>
+            <p class="drama-error" id="dramaError" role="alert"></p>
+            <div class="drama-generate-row">
+              <div><strong id="dramaScopeLabel">3 集 × 60 秒</strong><span>先看剧本和角色，不会立即消耗显卡</span></div>
+              <button class="drama-generate" id="dramaGenerate" type="submit"><span id="dramaGenerateText">生成剧本与角色方案</span><svg><use href="#icon-spark"></use></svg></button>
+            </div>
+            <details class="drama-provider-settings" id="dramaProviderSettings">
+              <summary><span>服务地址、模型与 API Key</span><small id="dramaKeyState">仅保留到关闭页面</small><svg><use href="#icon-chevron"></use></svg></summary>
+              <div class="drama-provider-grid">
+                <label class="drama-field" for="dramaBaseUrl"><span>OpenAI-compatible 地址</span><input id="dramaBaseUrl" type="url" autocomplete="off" spellcheck="false" /></label>
+                <label class="drama-field" for="dramaModel"><span>模型名称</span><input id="dramaModel" type="text" autocomplete="off" spellcheck="false" /></label>
+                <label class="drama-field" for="dramaApiKey"><span>API Key</span><input id="dramaApiKey" type="password" autocomplete="off" spellcheck="false" data-1p-ignore="true" placeholder="由你填写，不写入项目" /></label>
+              </div>
+              <p class="drama-privacy">只发送本页文字参数；参考图、本机路径、硬件、模型清单和工作流不会发送给编剧模型。</p>
+            </details>
+          </section>
+        </form>
+      </section>
+
+      <section class="drama-output" aria-labelledby="dramaOutputTitle">
+        <header class="drama-output__bar">
+          <div><p class="eyebrow eyebrow--dark">STORY TO PRODUCTION</p><h2 id="dramaOutputTitle">短剧方案与生成中心</h2></div>
+          <div class="drama-output__actions">
+            <button id="dramaExportMarkdown" type="button" disabled>导出 Markdown</button>
+            <button id="dramaExportJson" type="button" disabled><svg><use href="#icon-download"></use></svg>JSON</button>
+          </div>
+        </header>
+
+        <div class="drama-empty" id="dramaEmpty">
+          <div class="drama-empty__mark" aria-hidden="true"><span>01</span><i></i><span>08</span></div>
+          <p class="eyebrow eyebrow--dark">WAITING FOR STORY</p>
+          <h3>写一次创意，<br />完成整部短剧。</h3>
+          <p>AI 会自动拆成剧本、角色、场景和镜头。你确认角色形象后，只需一次点击，后续镜头会在后台按顺序完成。</p>
+          <ol>
+            <li><span>01</span><strong>AI 写完整方案</strong><small>剧本、分集与分镜</small></li>
+            <li><span>02</span><strong>你确认角色</strong><small>补齐并锁定角色三视图</small></li>
+            <li><span>03</span><strong>一键生成</strong><small>无需逐镜头操作</small></li>
+          </ol>
+        </div>
+
+        <article class="drama-package" id="dramaPackage" hidden>
+          <header class="drama-package__header">
+            <div><span id="dramaPackageGenre">短剧制片包</span><h3 id="dramaPackageTitle">—</h3><p id="dramaPackageLogline"></p></div>
+            <dl id="dramaPackageMetrics"></dl>
+          </header>
+          <nav class="drama-tabs" id="dramaTabs" aria-label="制片包视图">
+            <button type="button" data-view="overview" class="is-selected" aria-pressed="true">总览</button>
+            <button type="button" data-view="assets" aria-pressed="false">资产圣经</button>
+            <button type="button" data-view="episodes" aria-pressed="false">分集与镜头</button>
+          </nav>
+          <div class="season-ledger" id="seasonLedger" aria-label="分集台账"></div>
+          <div class="drama-package__view" id="dramaPackageView"></div>
+          <section class="drama-asset-gate" id="dramaAssetGate" aria-labelledby="dramaAssetGateTitle">
+            <header>
+                <div><span>02</span><div><strong id="dramaAssetGateTitle">三视图锁定角色</strong><p>每位主要角色上传正面、3/4 侧面与全侧面；三张图会作为同一身份共同进入 H3。</p></div></div>
+              <small id="dramaAssetSummary">等待剧本方案</small>
+            </header>
+            <div class="drama-character-assets" id="dramaCharacterAssets"></div>
+            <input id="dramaCharacterInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+          </section>
+          <footer class="drama-production-gate" id="dramaProductionGate">
+            <span>03</span>
+            <div><strong id="dramaBatchState">先确认全部主要角色</strong><p>开始后后台会逐镜头串行生成，避免并发挤爆显存；你无需留在当前页面逐个操作。</p></div>
+            <button id="dramaBatchGenerate" type="button" disabled>一键生成全部镜头</button>
+          </footer>
+          <section class="drama-batch-progress" id="dramaBatchProgress" hidden>
+            <div><span id="dramaBatchProgressLabel">准备生成</span><strong id="dramaBatchProgressCount">0 / 0</strong></div>
+            <div class="drama-batch-progress__track"><span id="dramaBatchProgressBar"></span></div>
+            <p id="dramaBatchProgressDetail">正在检查模型、节点、显存和角色参考图。</p>
+            <div class="drama-batch-results" id="dramaBatchResults"></div>
+          </section>
+        </article>
+      </section>
+    </main>
+
+    <div class="mobile-review-dock" id="mobileReviewDock">
+      <div><span>生成前总检</span><strong id="mobileReviewState">正在分析</strong></div>
+      <button id="mobileReviewButton" type="button">查看方案</button>
+    </div>
+
+    <dialog class="assistant-dialog" id="promptAssistantDialog" aria-labelledby="assistantTitle">
+      <div class="assistant-dialog__shell">
+        <header class="assistant-dialog__header">
+          <div>
+            <p class="eyebrow">H3 OFFICIAL PROMPT DIRECTOR</p>
+            <h2 id="assistantTitle">把创意整理成可执行镜头</h2>
+            <p>按 MiniMax H3 官方 Base / Ref2VA 指引组织画面、镜头时间线与原生声轨。</p>
+          </div>
+          <button class="assistant-dialog__close" id="promptAssistantClose" type="button" aria-label="关闭 AI 提示词编导">
+            <svg><use href="#icon-close"></use></svg>
+          </button>
+        </header>
+
+        <div class="assistant-dialog__body">
+          <section class="assistant-brief" aria-labelledby="assistantBriefTitle">
+            <div class="assistant-section-heading">
+              <span>01</span>
+              <div><h3 id="assistantBriefTitle">本次改写</h3><p id="assistantContext">读取当前创意与制片参数</p></div>
+            </div>
+            <div class="assistant-brief__preview" id="assistantBriefPreview">请先在主编辑器里写下画面创意。</div>
+            <div class="assistant-contract">
+              <span>官方结构门禁</span>
+              <ul>
+                <li><svg><use href="#icon-check"></use></svg><span>画面与镜头写入时间线字段</span></li>
+                <li><svg><use href="#icon-check"></use></svg><span>环境声与观众配乐严格分层</span></li>
+                <li><svg><use href="#icon-check"></use></svg><span>长视频逐 5 秒建立新剧情段</span></li>
+              </ul>
+            </div>
+            <p class="assistant-privacy"><strong>隐私边界</strong> 只发送当前文字、时长、比例与参考模式；参考图、本机路径、硬件和工作流不会发给模型服务。</p>
+          </section>
+
+          <section class="assistant-provider" aria-labelledby="assistantProviderTitle">
+            <div class="assistant-section-heading">
+              <span>02</span>
+              <div><h3 id="assistantProviderTitle">选择你自己的模型</h3><p id="assistantEnvironmentState">正在读取本地配置</p></div>
+            </div>
+
+            <div class="provider-switch" id="assistantProviderSwitch" role="group" aria-label="模型服务预设">
+              <button type="button" data-provider="deepseek" class="is-selected" aria-pressed="true">
+                <strong>DeepSeek</strong><span>官方当前 V4 Flash</span>
+              </button>
+              <button type="button" data-provider="custom" aria-pressed="false">
+                <strong>其他兼容接口</strong><span>云端或本机模型</span>
+              </button>
+            </div>
+
+            <label class="assistant-field" for="assistantBaseUrl">
+              <span>服务地址</span>
+              <input id="assistantBaseUrl" type="url" value="https://api.deepseek.com" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="assistant-field" for="assistantModel">
+              <span>模型名称</span>
+              <input id="assistantModel" type="text" value="deepseek-v4-flash" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="assistant-field" for="assistantApiKey">
+              <span>API Key <small id="assistantKeyState">仅保留到关闭页面</small></span>
+              <input id="assistantApiKey" type="password" placeholder="由你自行填写，不写入项目" autocomplete="off" spellcheck="false" data-1p-ignore="true" />
+            </label>
+            <p class="assistant-field-note">远程接口必须使用 HTTPS；本机 OpenAI-compatible 服务可使用 127.0.0.1，且允许不填 Key。</p>
+            <p class="assistant-error" id="assistantError" role="alert"></p>
+          </section>
+        </div>
+
+        <footer class="assistant-dialog__footer">
+          <div><span id="assistantGuideState">MiniMax H3 官方指引已锁定</span><small>模型输出还会经过本地字段与时间线复检</small></div>
+          <button class="assistant-cancel" id="promptAssistantCancel" type="button">取消</button>
+          <button class="assistant-generate" id="promptAssistantGenerate" type="button">
+            <span id="promptAssistantGenerateText">生成官方格式提示词</span>
+            <svg><use href="#icon-spark"></use></svg>
+          </button>
+        </footer>
+      </div>
+    </dialog>
 
     <section class="job-panel" id="jobPanel" aria-labelledby="jobTitle" hidden>
       <div class="job-panel__backdrop"></div>

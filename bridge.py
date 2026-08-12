@@ -9,6 +9,7 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import time
@@ -21,10 +22,13 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any
 
 from PIL import Image, UnidentifiedImageError
+
+from prompt_assistant import prompt_assistant_status, rewrite_h3_prompt
+from short_drama import CHARACTER_REFERENCE_VIEWS, expand_short_drama_batch_units, generate_short_drama, preflight_short_drama_batch, short_drama_status
 
 
 STATIC_ROOT = Path(__file__).resolve().parent
@@ -47,6 +51,9 @@ COMPATIBILITY = json.loads(COMPATIBILITY_FILE.read_text(encoding="utf-8"))
 QUEUE_SUBMIT_LOCK = Lock()
 ENVIRONMENT_CACHE_LOCK = Lock()
 ENVIRONMENT_CACHE: dict[str, Any] = {"at": 0.0, "value": None}
+DRAMA_BATCH_LOCK = Lock()
+DRAMA_BATCH_JOBS: dict[str, dict[str, Any]] = {}
+DRAMA_BATCH_ACTIVE: str | None = None
 
 FPS = 24
 SEGMENT_FRAMES = 124
@@ -400,6 +407,17 @@ def build_plan(raw: dict[str, Any], snapshot: dict[str, Any] | None = None) -> d
         blockers.append("缺少所需模型：" + "、".join(missing_core))
     if config["reference_mode"] == "identity" and config["duration"] > 5:
         blockers.append("多参考 Ref2VA 当前只开放已验证的 5 秒档；长视频需完成潜空间续接实载验收后再开放")
+    if config["duration"] > 5:
+        prompt_text = str(raw.get("prompt") or "").strip()
+        try:
+            compile_segment_series(
+                prompt_text,
+                segment_seconds=config["duration"] / segments,
+                total_seconds=float(config["duration"]),
+                first_has_reference=bool(config["reference"]),
+            )
+        except ValueError as exc:
+            blockers.append("长视频剧情时间线：" + str(exc))
     if comfy["queue_running"] or comfy["queue_pending"]:
         blockers.append("ComfyUI 当前有任务，需等待队列清空以避免资源争抢")
 
@@ -457,7 +475,7 @@ def build_workflow(prompt_text: str, raw: dict[str, Any], snapshot: dict[str, An
     if len(prompt_text) > 12000:
         raise ValueError("提示词过长，最多 12000 个字符")
 
-    plan = build_plan(raw, snapshot=snapshot)
+    plan = build_plan({**raw, "prompt": prompt_text}, snapshot=snapshot)
     width, height = ASPECTS[plan["aspect"]]["source"]
     identity_mode = plan["reference_mode"] == "identity"
     h3_model_name = (
@@ -651,6 +669,175 @@ def build_workflow(prompt_text: str, raw: dict[str, Any], snapshot: dict[str, An
             "format": "mp4",
             "codec": "auto",
         },
+    }
+    return workflow, plan
+
+
+def build_short_drama_shot_workflow(
+    package: dict[str, Any],
+    scene: dict[str, Any],
+    shot: dict[str, Any],
+    character_assets: dict[str, Any],
+    *,
+    job_id: str,
+    quality: str,
+    seed: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build one self-contained Ref2VA shot using every confirmed on-screen identity."""
+    project = package["project"]
+    aspect = str(project.get("aspect") or "9:16")
+    if aspect not in ASPECTS:
+        raise ValueError(f"{shot.get('id', '镜头')} 画幅无效")
+    duration = int(shot.get("duration_seconds") or 0)
+    if duration not in (5, 10, 15):
+        raise ValueError(f"{shot.get('id', '镜头')} 时长必须是 5、10 或 15 秒")
+    if quality not in {"draft", "balanced", "studio"}:
+        raise ValueError("短剧镜头质量档位无效")
+
+    character_map = {item["id"]: item for item in package["characters"]}
+    cast_ids = list(dict.fromkeys(str(item) for item in scene.get("cast_ids", [])))
+    if not cast_ids or len(cast_ids) > 9:
+        raise ValueError(f"{scene.get('id', '场景')} 需要 1 到 9 个可引用角色")
+    references: list[tuple[str, dict[str, Any], list[tuple[str, str]]]] = []
+    for character_id in cast_ids:
+        character = character_map.get(character_id)
+        asset = character_assets.get(character_id)
+        if not character or not isinstance(asset, dict) or asset.get("approved") is not True:
+            raise ValueError(f"{shot.get('id')} 缺少已确认的 {character_id} 参考图")
+        views = asset.get("views") if isinstance(asset.get("views"), dict) else None
+        view_tokens: list[tuple[str, str]] = []
+        if views:
+            for view in CHARACTER_REFERENCE_VIEWS:
+                value = views.get(view)
+                token = str(value.get("token") or "").strip() if isinstance(value, dict) else ""
+                if not REFERENCE_TOKEN.fullmatch(token):
+                    raise ValueError(f"{character_id} 的 {view} 三视图令牌无效，请重新上传")
+                view_tokens.append((view, token))
+        else:
+            token = str(asset.get("token") or "").strip()
+            if not REFERENCE_TOKEN.fullmatch(token):
+                raise ValueError(f"{character_id} 参考图令牌无效，请重新上传")
+            view_tokens.append(("legacy", token))
+        references.append((character_id, character, view_tokens))
+    if sum(len(view_tokens) for _, _, view_tokens in references) > 9:
+        raise ValueError(f"{scene.get('id', '场景')} 的角色参考图超过 H3 节点 9 张上限")
+
+    wardrobe_map = {
+        wardrobe["id"]: (character["id"], wardrobe)
+        for character in package["characters"]
+        for wardrobe in character.get("wardrobe_states", [])
+    }
+    wardrobe_lines = []
+    for wardrobe_id in scene.get("wardrobe_ids", []):
+        owner_and_state = wardrobe_map.get(wardrobe_id)
+        if owner_and_state:
+            owner, wardrobe = owner_and_state
+            wardrobe_lines.append(f"{owner} 使用 {wardrobe_id}：{wardrobe.get('description', '')}")
+
+    definitions = []
+    retention = []
+    picture_index = 1
+    for character_id, character, view_tokens in references:
+        picture_labels = ", ".join(f"<Picture {picture_index + offset}> {view}" for offset, (view, _token) in enumerate(view_tokens))
+        definitions.append(
+            f"<Subject {character_id}> 是 {character.get('name')}（{character_id}），{picture_labels} 是同一个人的多视角身份参考，不是不同角色；"
+            f"固定外观：{character.get('appearance', '')}"
+        )
+        retention.append(
+            f"<Subject {character_id}>：综合同一人物的 {picture_labels} 锁定正脸、侧脸、体态与服装；动作、表情和场景可变，人物身份不可改变。"
+        )
+        picture_index += len(view_tokens)
+    dialogue = "；".join(f"{line.get('speaker_id')}：{line.get('text')}" for line in shot.get("dialogue", [])) or "无对白"
+    beats = "\n".join(
+        f"{beat.get('start_second')}-{beat.get('end_second')}秒：[Shot {index}] {beat.get('action')}"
+        for index, beat in enumerate(shot.get("beats", []), 1)
+    )
+    prompt_text = (
+        "subject_definitions:\n" + "\n".join(definitions)
+        + "\n\nsummary:\n"
+        + f"[reference generation] {project.get('genre')}；{project.get('visual_style')}；{aspect}；{project.get('quality')}。"
+        + "\n\nretention_analysis:\n" + "\n".join(retention)
+        + "\n\ndetailed_description:\n"
+        + f"{shot.get('h3_brief')}\n场景服装：{'；'.join(wardrobe_lines) or '保持角色固定服装'}。"
+        + f"\n对白：{dialogue}。\n连续性进入：{shot.get('continuity_in')}。\n连续性离开：{shot.get('continuity_out')}。\n{beats}"
+        + "\n\noverall_soundscape:\n" + str(shot.get("sound") or "自然现场声")
+        + "\n\nnon_diegetic_music:\n" + str(shot.get("music") or "N/A")
+    )
+    if len(prompt_text) > 12000:
+        raise ValueError(f"{shot.get('id')} H3 提示词超过 12000 字符")
+
+    width, height = ASPECTS[aspect]["source"]
+    raw_frames = min(SEGMENT_FRAMES if duration == 5 else duration * FPS + 2, 362)
+    final_frames = duration * FPS
+    workflow: dict[str, dict[str, Any]] = {
+        "6": {"class_type": "UNETLoader", "inputs": {"unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors", "weight_dtype": "default"}},
+        "9": {"class_type": "BasicScheduler", "inputs": {"model": ["6", 0], "scheduler": "beta", "steps": 20, "denoise": 1.0}},
+        "11": {"class_type": "VAELoader", "inputs": {"vae_name": "minimax_h3_video_vae_fp16.safetensors"}},
+        "12": {"class_type": "VAELoader", "inputs": {"vae_name": "minimax_h3_audio_vae_fp32.safetensors"}},
+        "13": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "type": "minimax", "device": "default"}},
+        "17": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}},
+        "100": {
+            "class_type": "MiniMaxH3ReferenceToVideo",
+            "inputs": {
+                "clip": ["13", 0], "vae": ["11", 0], "audio_vae": ["12", 0], "prompt": prompt_text,
+                "width": width, "height": height, "length": raw_frames, "ref_image_size": "match",
+                "ref_images": {},
+            },
+        },
+        "110": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+        "120": {"class_type": "BasicGuider", "inputs": {"model": ["6", 0], "conditioning": ["100", 0]}},
+        "130": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["110", 0], "guider": ["120", 0], "sampler": ["17", 0], "sigmas": ["9", 0], "latent_image": ["100", 1]}},
+        "140": {"class_type": "VAEDecode", "inputs": {"samples": ["130", 0], "vae": ["11", 0]}},
+        "200": {"class_type": "VAEDecodeAudio", "inputs": {"samples": ["130", 0], "vae": ["12", 0]}},
+        "250": {"class_type": "ImageFromBatch", "inputs": {"image": ["140", 0], "batch_index": 0, "length": final_frames}},
+        "260": {"class_type": "H3AudioSequenceMaster", "inputs": {
+            "segment_count": 1, "segment_frames": raw_frames, "trim_frames": 1, "fps": float(FPS),
+            "final_duration": float(duration), "boundary_fade_ms": 15.0, "target_rms_dbfs": -18.0,
+            "target_peak_dbfs": -1.0, "max_makeup_db": 3.0, "audio1": ["200", 0],
+        }},
+    }
+    reference_index = 0
+    for _character_id, _character, view_tokens in references:
+        for _view, token in view_tokens:
+            load_id = str(18 + reference_index)
+            workflow[load_id] = {"class_type": "LoadImage", "inputs": {"image": token}}
+            workflow["100"]["inputs"]["ref_images"][f"ref_image_{reference_index}"] = [load_id, 0]
+            reference_index += 1
+
+    output_images: list[Any] = ["250", 0]
+    if quality in {"balanced", "studio"}:
+        output_width, output_height = ASPECTS[aspect][quality]
+        workflow["300"] = {"class_type": "ImageScale", "inputs": {"image": output_images, "upscale_method": "lanczos", "width": output_width, "height": output_height, "crop": "disabled"}}
+        output_images = ["300", 0]
+    if quality == "studio":
+        workflow["301"] = {"class_type": "SeedVR2Preprocess", "inputs": {"resized_images": ["300", 0]}}
+        workflow["302"] = {"class_type": "VAELoader", "inputs": {"vae_name": "seedvr2_ema_vae_fp16.safetensors"}}
+        workflow["303"] = {"class_type": "VAEEncodeTiled", "inputs": {"pixels": ["301", 0], "vae": ["302", 0], "tile_size": 512, "overlap": 128, "temporal_size": 64, "temporal_overlap": 8}}
+        workflow["304"] = {"class_type": "UNETLoader", "inputs": {"unet_name": "seedvr2_3b_int8_convrot.safetensors", "weight_dtype": "default"}}
+        workflow["305"] = {"class_type": "SeedVR2TemporalChunk", "inputs": {"latent": ["303", 0], "temporal_overlap": 2, "chunking_mode": "auto"}}
+        workflow["306"] = {"class_type": "SeedVR2Conditioning", "inputs": {"model": ["304", 0], "vae_conditioning": ["305", 0]}}
+        workflow["307"] = {"class_type": "KSampler", "inputs": {"model": ["304", 0], "seed": seed + 97, "steps": 1, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "positive": ["306", 0], "negative": ["306", 1], "latent_image": ["305", 0], "denoise": 1.0}}
+        workflow["308"] = {"class_type": "SeedVR2TemporalMerge", "inputs": {"latents": ["307", 0], "temporal_overlap": ["305", 1]}}
+        workflow["309"] = {"class_type": "VAEDecodeTiled", "inputs": {"samples": ["308", 0], "vae": ["302", 0], "tile_size": 512, "overlap": 128, "temporal_size": 64, "temporal_overlap": 8}}
+        workflow["310"] = {"class_type": "SeedVR2PostProcessing", "inputs": {"images": ["309", 0], "original_resized_images": ["300", 0], "color_correction_method": "lab"}}
+        output_images = ["310", 0]
+
+    safe_shot_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(shot.get("id") or "shot"))
+    workflow["270"] = {"class_type": "CreateVideo", "inputs": {"images": output_images, "audio": ["260", 0], "fps": float(FPS), "bit_depth": 8}}
+    workflow["271"] = {"class_type": "SaveVideo", "inputs": {
+        "video": ["270", 0], "filename_prefix": f"video/short_drama/{job_id}/{safe_shot_id}",
+        "format": "mp4", "codec": "auto",
+    }}
+    plan = {
+        "ready": True,
+        "blockers": [],
+        "reference_mode": "identity_three_view" if all(len(view_tokens) == 3 for _, _, view_tokens in references) else "identity",
+        "quality_applied": quality,
+        "quality_requested": str(project.get("quality") or quality),
+        "duration": duration,
+        "aspect": aspect,
+        "seed": seed,
+        "shot_id": shot.get("id"),
     }
     return workflow, plan
 
@@ -885,6 +1072,294 @@ def collect_outputs(record: dict[str, Any]) -> list[dict[str, Any]]:
     return files
 
 
+def is_video_output(item: dict[str, Any]) -> bool:
+    suffix = Path(str(item.get("filename") or "")).suffix.lower()
+    return item.get("kind") in {"videos", "video", "gifs"} or suffix in {".mp4", ".webm", ".mov", ".mkv", ".gif"}
+
+
+def _ffmpeg_executable() -> Path:
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return Path(system_ffmpeg)
+    try:
+        import imageio_ffmpeg
+
+        packaged_ffmpeg = Path(imageio_ffmpeg.get_ffmpeg_exe())
+        if packaged_ffmpeg.is_file():
+            return packaged_ffmpeg
+    except (ImportError, RuntimeError):
+        pass
+    binary_root = PORTABLE_ROOT / "python_embeded" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries"
+    candidates = sorted(binary_root.glob("ffmpeg*.exe")) if binary_root.is_dir() else []
+    if candidates:
+        return candidates[0]
+    raise RuntimeError("未找到 FFmpeg，全部分镜已保留，但无法自动合成整集视频")
+
+
+def _output_file_path(item: dict[str, Any]) -> Path:
+    output_root = (COMFY_ROOT / "output").resolve()
+    filename = Path(str(item.get("filename") or "")).name
+    if not filename:
+        raise RuntimeError("镜头输出缺少文件名，无法合成整集")
+    candidate = (output_root / str(item.get("subfolder") or "") / filename).resolve()
+    if not candidate.is_relative_to(output_root) or not candidate.is_file():
+        raise RuntimeError(f"镜头文件不存在或不在 ComfyUI 输出目录：{filename}")
+    return candidate
+
+
+def assemble_short_drama_episodes(
+    package: dict[str, Any], outputs: list[dict[str, Any]], job_id: str
+) -> list[dict[str, Any]]:
+    """Encode ordered five-second shot files into one directly playable MP4 per episode."""
+    ffmpeg = _ffmpeg_executable()
+    episode_outputs: list[dict[str, Any]] = []
+    expected_units = expand_short_drama_batch_units(package)
+    for episode in package.get("episodes", []):
+        episode_id = str(episode.get("id") or "episode")
+        expected_ids = [
+            str(unit["shot"]["id"])
+            for unit in expected_units
+            if str(unit["episode"].get("id")) == episode_id
+        ]
+        by_shot = {
+            str(output.get("shot_id")): output
+            for output in outputs
+            if str(output.get("episode_id")) == episode_id
+        }
+        if any(shot_id not in by_shot for shot_id in expected_ids):
+            raise RuntimeError(f"{episode_id} 分镜不完整，已保留散片但未合成整集")
+        source_files: list[Path] = []
+        for shot_id in expected_ids:
+            video = next((item for item in by_shot[shot_id].get("files", []) if is_video_output(item)), None)
+            if not video:
+                raise RuntimeError(f"{shot_id} 没有可合成的视频文件")
+            source_files.append(_output_file_path(video))
+
+        safe_episode_id = re.sub(r"[^A-Za-z0-9_-]+", "_", episode_id)
+        output_subfolder = Path("video") / "short_drama" / job_id
+        output_dir = COMFY_ROOT / "output" / output_subfolder
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{safe_episode_id}_complete.mp4"
+        command = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y"]
+        for source in source_files:
+            command.extend(["-i", str(source)])
+        filters = []
+        for index in range(len(source_files)):
+            filters.append(f"[{index}:v:0]setpts=N/({FPS}*TB)[v{index}]")
+            filters.append(f"[{index}:a:0]asetpts=N/SR/TB[a{index}]")
+        concat_inputs = "".join(f"[v{index}][a{index}]" for index in range(len(source_files)))
+        filters.append(f"{concat_inputs}concat=n={len(source_files)}:v=1:a=1[v][a]")
+        command.extend(
+            [
+                "-filter_complex", ";".join(filters),
+                "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "medium", "-crf", "17",
+                "-pix_fmt", "yuv420p", "-r", str(FPS), "-fps_mode", "cfr",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "32000",
+                "-movflags", "+faststart", "-t", str(int(episode.get("duration_seconds") or 0)), str(output_path),
+            ]
+        )
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, check=False)
+        if completed.returncode or not output_path.is_file():
+            detail = (completed.stderr or completed.stdout or "FFmpeg 未返回输出文件").strip()
+            raise RuntimeError(f"{episode_id} 自动合片失败，分镜已保留：{detail[:600]}")
+        filename = output_path.name
+        subfolder = str(output_subfolder)
+        query = urllib.parse.urlencode({"filename": filename, "subfolder": subfolder, "type": "output"})
+        episode_outputs.append(
+            {
+                "episode_id": episode_id,
+                "duration_seconds": int(episode.get("duration_seconds") or 0),
+                "files": [{
+                    "filename": filename, "subfolder": subfolder, "type": "output", "kind": "video",
+                    "url": f"/api/view?{query}",
+                }],
+            }
+        )
+    return episode_outputs
+
+
+def _update_drama_batch_job(job_id: str, **changes: Any) -> None:
+    with DRAMA_BATCH_LOCK:
+        job = DRAMA_BATCH_JOBS.get(job_id)
+        if not job:
+            return
+        job.update(changes)
+        job["updated_at"] = time.time()
+
+
+def _wait_for_empty_comfy_queue(timeout_seconds: int = 90) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        queue = json_request(f"{COMFY_URL}/queue", timeout=10)
+        if not queue.get("queue_running") and not queue.get("queue_pending"):
+            return
+        time.sleep(3)
+    raise RuntimeError("ComfyUI 队列释放超时；为避免显存叠加，整批任务已安全停止")
+
+
+def _wait_for_drama_prompt(prompt_id: str, timeout_seconds: int = 7200) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        history = json_request(f"{COMFY_URL}/history/{urllib.parse.quote(prompt_id)}", timeout=12)
+        record = history.get(prompt_id)
+        if record:
+            status = record.get("status", {})
+            if status.get("status_str") == "error":
+                messages = status.get("messages") or []
+                detail = str(messages[-1]) if messages else "ComfyUI 返回镜头生成错误"
+                raise RuntimeError(detail[:1200])
+            if record.get("outputs"):
+                return record
+        time.sleep(5)
+    raise RuntimeError("单镜头生成超过两小时仍未完成，整批任务已安全停止")
+
+
+def _run_short_drama_batch(
+    job_id: str,
+    package: dict[str, Any],
+    character_assets: dict[str, Any],
+    gate: dict[str, Any],
+) -> None:
+    global DRAMA_BATCH_ACTIVE
+    work = [(unit["episode"], unit["scene"], unit["shot"]) for unit in expand_short_drama_batch_units(package)]
+    completed = 0
+    outputs: list[dict[str, Any]] = []
+    _update_drama_batch_job(job_id, state="running", detail="后台队列已启动，正在准备第一个镜头")
+    try:
+        for ordinal, (episode, scene, shot) in enumerate(work, 1):
+            shot_id = str(shot["id"])
+            last_error: Exception | None = None
+            for attempt in (1, 2):
+                _update_drama_batch_job(
+                    job_id,
+                    current_shot=shot_id,
+                    detail=(
+                        f"正在生成 {episode['id']} · {shot_id}（{ordinal}/{len(work)}）"
+                        if attempt == 1 else f"{shot_id} 第一次未完成，正在进行唯一一次安全重试"
+                    ),
+                )
+                try:
+                    _wait_for_empty_comfy_queue()
+                    snapshot = environment_snapshot(force=True)
+                    if not snapshot["comfy"].get("online"):
+                        raise RuntimeError("ComfyUI 在批量生成期间断开连接")
+                    workflow, plan = build_short_drama_shot_workflow(
+                        package,
+                        scene,
+                        shot,
+                        character_assets,
+                        job_id=job_id,
+                        quality=gate["quality_applied"],
+                        seed=secrets.randbits(32),
+                    )
+                    with QUEUE_SUBMIT_LOCK:
+                        preflight(workflow, plan)
+                        queued = json_request(
+                            f"{COMFY_URL}/prompt",
+                            {"prompt": workflow, "client_id": str(uuid.uuid4())},
+                            timeout=30,
+                        )
+                    prompt_id = str(queued["prompt_id"])
+                    _update_drama_batch_job(job_id, current_prompt_id=prompt_id)
+                    record = _wait_for_drama_prompt(prompt_id)
+                    shot_files = collect_outputs(record)
+                    if not any(is_video_output(item) for item in shot_files):
+                        raise RuntimeError(f"{shot_id} 未返回视频文件")
+                    outputs.append({"episode_id": episode["id"], "shot_id": shot_id, "files": shot_files})
+                    completed += 1
+                    _update_drama_batch_job(
+                        job_id,
+                        completed_shots=completed,
+                        outputs=outputs,
+                        detail=f"{shot_id} 已完成；释放资源后继续下一个镜头",
+                    )
+                    last_error = None
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt == 1:
+                        _update_drama_batch_job(job_id, detail=f"{shot_id} 未完成：{exc}；等待队列释放后重试一次")
+                        _wait_for_empty_comfy_queue()
+            if last_error is not None:
+                raise RuntimeError(f"{shot_id} 连续两次未完成：{last_error}")
+        episode_outputs = assemble_short_drama_episodes(package, outputs, job_id)
+        _update_drama_batch_job(
+            job_id,
+            state="complete",
+            current_shot=None,
+            current_prompt_id=None,
+            episode_outputs=episode_outputs,
+            detail=f"全部 {completed} 个镜头与 {len(episode_outputs)} 集成片已完成",
+        )
+    except Exception as exc:
+        _update_drama_batch_job(
+            job_id,
+            state="error",
+            current_prompt_id=None,
+            detail=str(exc)[:1600],
+        )
+    finally:
+        with DRAMA_BATCH_LOCK:
+            if DRAMA_BATCH_ACTIVE == job_id:
+                DRAMA_BATCH_ACTIVE = None
+
+
+def start_short_drama_batch(payload: dict[str, Any]) -> dict[str, Any]:
+    global DRAMA_BATCH_ACTIVE
+    package = payload.get("package")
+    character_assets = payload.get("character_assets")
+    snapshot = environment_snapshot(force=True)
+    gate = preflight_short_drama_batch(package, character_assets, snapshot)
+    for character_id, asset in character_assets.items():
+        views = asset.get("views") if isinstance(asset, dict) and isinstance(asset.get("views"), dict) else None
+        tokens = [
+            str(views.get(view, {}).get("token") or "").strip()
+            for view in CHARACTER_REFERENCE_VIEWS
+        ] if views else [str(asset.get("token") or "").strip() if isinstance(asset, dict) else ""]
+        if not tokens or any(not REFERENCE_TOKEN.fullmatch(token) for token in tokens):
+            raise ValueError(f"{character_id} 三视图参考令牌无效，请重新上传")
+    with DRAMA_BATCH_LOCK:
+        if DRAMA_BATCH_ACTIVE:
+            active = DRAMA_BATCH_JOBS.get(DRAMA_BATCH_ACTIVE, {})
+            if active.get("state") in {"queued", "running"}:
+                raise RuntimeError(f"已有短剧任务 {DRAMA_BATCH_ACTIVE} 正在运行，请等待完成")
+        job_id = f"drama_{uuid.uuid4().hex[:12]}"
+        job = {
+            "job_id": job_id,
+            "state": "queued",
+            "total_shots": gate["shot_count"],
+            "completed_shots": 0,
+            "current_shot": None,
+            "current_prompt_id": None,
+            "quality_requested": gate["quality_requested"],
+            "quality_applied": gate["quality_applied"],
+            "execution_mode": gate["execution_mode"],
+            "outputs": [],
+            "episode_outputs": [],
+            "detail": "已通过生成前检查，正在启动后台串行队列",
+            "created_at": time.time(),
+            "updated_at": time.time(),
+        }
+        DRAMA_BATCH_JOBS[job_id] = job
+        DRAMA_BATCH_ACTIVE = job_id
+    worker = Thread(
+        target=_run_short_drama_batch,
+        args=(job_id, package, character_assets, gate),
+        name=f"H3DramaBatch-{job_id}",
+        daemon=True,
+    )
+    worker.start()
+    return {"job_id": job_id, "job": dict(job), "preflight": gate}
+
+
+def get_short_drama_batch(job_id: str) -> dict[str, Any]:
+    with DRAMA_BATCH_LOCK:
+        job = DRAMA_BATCH_JOBS.get(job_id)
+        if not job:
+            raise ValueError("短剧后台任务不存在或服务已重启")
+        return json.loads(json.dumps(job, ensure_ascii=False))
+
+
 class H3FlowHandler(BaseHTTPRequestHandler):
     server_version = "H3Flow/1.0"
 
@@ -914,6 +1389,19 @@ class H3FlowHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/compatibility":
             self.send_json(environment_snapshot(force=True)["compatibility"])
+            return
+        if parsed.path == "/api/prompt-assistant":
+            self.send_json(prompt_assistant_status())
+            return
+        if parsed.path == "/api/short-drama":
+            self.send_json(short_drama_status())
+            return
+        if parsed.path.startswith("/api/short-drama/batch/"):
+            job_id = parsed.path.rsplit("/", 1)[-1]
+            try:
+                self.send_json(get_short_drama_batch(job_id))
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, 404)
             return
         if parsed.path.startswith("/api/job/"):
             prompt_id = parsed.path.rsplit("/", 1)[-1]
@@ -960,6 +1448,20 @@ class H3FlowHandler(BaseHTTPRequestHandler):
                 return
             if self.path == "/api/upload":
                 self.send_json({"reference": upload_reference(payload)}, 201)
+                return
+            if self.path == "/api/prompt-assistant":
+                self.send_json(rewrite_h3_prompt(payload))
+                return
+            if self.path == "/api/short-drama/plan":
+                self.send_json(generate_short_drama(payload))
+                return
+            if self.path == "/api/short-drama/batch/preflight":
+                self.send_json(preflight_short_drama_batch(
+                    payload.get("package"), payload.get("character_assets"), environment_snapshot(force=True)
+                ))
+                return
+            if self.path == "/api/short-drama/batch/start":
+                self.send_json(start_short_drama_batch(payload), 202)
                 return
             if self.path == "/api/start":
                 if not START_SCRIPT.is_file():

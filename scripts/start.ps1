@@ -7,8 +7,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path -Parent $PSScriptRoot
-$bridge = Join-Path $projectRoot 'bridge.py'
+$appRoot = Split-Path -Parent $PSScriptRoot
+$parentRoot = Split-Path -Parent $appRoot
+$projectRoot = if (Test-Path -LiteralPath (Join-Path $appRoot 'runtime') -PathType Container) {
+    $appRoot
+}
+elseif (Test-Path -LiteralPath (Join-Path $parentRoot 'runtime') -PathType Container) {
+    $parentRoot
+}
+else {
+    $appRoot
+}
+$bridge = Join-Path $appRoot 'bridge.py'
 
 if (-not (Test-Path -LiteralPath $bridge -PathType Leaf)) {
     throw "H3 Flow bridge not found: $bridge"
@@ -30,7 +40,8 @@ if (-not $pythonCommand) {
     throw 'Python launcher "py" was not found. Install Python 3.11 or newer.'
 }
 
-$process = Start-Process -FilePath $pythonCommand.Source -ArgumentList @('-3', '-X', 'utf8', $bridge, '--port', $Port) -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru
+$quotedBridge = '"' + $bridge + '"'
+$process = Start-Process -FilePath $pythonCommand.Source -ArgumentList @('-3', '-X', 'utf8', $quotedBridge, '--port', $Port) -WorkingDirectory $appRoot -WindowStyle Hidden -PassThru
 $baseUrl = "http://127.0.0.1:$Port"
 for ($attempt = 0; $attempt -lt 40; $attempt++) {
     Start-Sleep -Milliseconds 250

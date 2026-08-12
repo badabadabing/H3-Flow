@@ -62,11 +62,17 @@ def _split_fields(prompt: str) -> tuple[str, dict[str, str]]:
     return preamble, fields
 
 
-def _parse_timed_source(source: str, total_seconds: float) -> tuple[str, list[TimedBeat]]:
+def _parse_timed_source(
+    source: str, total_seconds: float, example_seconds: float | None = None
+) -> tuple[str, list[TimedBeat]]:
     matches = list(TIME_RANGE_PATTERN.finditer(source))
     if not matches:
+        step = float(example_seconds or total_seconds / 2.0)
+        first_end = min(step, total_seconds)
+        second_end = min(first_end + step, total_seconds)
         raise ValueError(
-            "没有找到可分段的时间段。请至少使用“0-15秒：...”和“15-30秒：...”格式，"
+            f"没有找到可分段的时间段。请至少使用“0-{first_end:g}秒：...”和"
+            f"“{first_end:g}-{second_end:g}秒：...”格式，"
             "否则工作流会在生成前停止以避免第二段重演第一段。"
         )
 
@@ -91,7 +97,9 @@ def _parse_timed_source(source: str, total_seconds: float) -> tuple[str, list[Ti
     return global_text, beats
 
 
-def parse_master_prompt(master_prompt: str, total_seconds: float) -> tuple[str, list[TimedBeat], str, str]:
+def parse_master_prompt(
+    master_prompt: str, total_seconds: float, example_seconds: float | None = None
+) -> tuple[str, list[TimedBeat], str, str]:
     prompt = str(master_prompt).strip()
     if not prompt:
         raise ValueError("提示词不能为空。")
@@ -110,7 +118,7 @@ def parse_master_prompt(master_prompt: str, total_seconds: float) -> tuple[str, 
         timed_source = preamble or integrated
         integrated_extra = ""
 
-    global_text, beats = _parse_timed_source(timed_source, total_seconds)
+    global_text, beats = _parse_timed_source(timed_source, total_seconds, example_seconds)
     global_parts = [part for part in (global_text, integrated_extra) if part]
     global_description = "\n\n".join(global_parts).strip()
     soundscape = fields.get(
@@ -132,7 +140,9 @@ def compile_segment_prompt(
     if segment_start < 0 or segment_end <= segment_start or segment_end > total_seconds + 0.001:
         raise ValueError("分段边界无效。")
 
-    global_description, beats, soundscape, music = parse_master_prompt(master_prompt, total_seconds)
+    global_description, beats, soundscape, music = parse_master_prompt(
+        master_prompt, total_seconds, segment_end - segment_start
+    )
     selected = [beat for beat in beats if beat.end > segment_start and beat.start < segment_end]
     starts_here = [beat for beat in beats if segment_start <= beat.start < segment_end]
     if not selected or not starts_here:
