@@ -114,3 +114,9 @@ Provide a local, guided frontend that turns creative choices into validated Comf
 - The test uses only a generated fictional role card; the role card, package, contact sheets, final video, mock local writer, and local job IDs remain in Git-ignored directories and are not uploaded. No real API key or personal media entered the flow.
 - Current checks: 36/36 tests in both repository copies, JavaScript syntax, Python compilation, diff checks, real 720×1280/24 fps/30.000-second video verification, audio RMS about -19.56 dBFS and peak about -0.56 dBFS with no NaN/Inf.
 - GitHub review at acceptance time found ComfyUI v0.32.0 newly released and active H3 PRs for arbitrary-frame guides (#15439), DynamicVRAM audio-VAE thrashing (#15371), attention hooks (#15270), and int8 alignment (#15518). The validated runtime remains on 0.31.1 until these changes are merged and pass local regression checks.
+
+## Three-view acceptance batch stopped — 2026-08-12
+
+- The user stopped the six-episode acceptance batch after 29 of 72 shots. H3 Flow's bridge process was stopped, ComfyUI was interrupted, and both running and pending queues were verified empty.
+- Generated drama media, narration, role-card copies, and acceptance scripts remain local and Git-ignored. Repository safety policy forbids automated recursive or scripted bulk deletion, so the user must remove the explicitly listed project-only paths in Explorer.
+- The product-level three-view UI, same-Subject Ref2VA wiring, nine-image gate, tests, and pushed commit remain part of H3 Flow; they are not generated resources from the cancelled drama.
