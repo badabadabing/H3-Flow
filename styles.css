@@ -1382,6 +1382,8 @@ body[data-mode="drama"] .mobile-review-dock {
 .drama-batch-results:empty { display: none; }
 .drama-batch-results a { display: flex; justify-content: space-between; gap: 10px; padding: 7px 8px; color: #b8bdb2; background: #181b17; border: 1px solid #343932; font-size: 8px; text-decoration: none; }
 .drama-batch-results a strong { color: var(--accent); }
+.drama-batch-results .drama-batch-result--episode { padding: 10px 9px; color: #eef1e9; background: #20251d; border-color: #748f34; font-size: 9px; }
+.drama-batch-results .drama-batch-result--episode strong { font-size: 10px; }
 
 @media (min-width: 1181px) {
   .drama-workspace {

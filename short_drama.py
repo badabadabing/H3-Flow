@@ -150,7 +150,7 @@ def short_drama_status() -> dict[str, Any]:
             "shot_handoff": False,
             "serial_batch_generation": True,
             "all_shot_batch_generation": True,
-            "final_episode_assembly": False,
+            "final_episode_assembly": True,
             "recoverable_batch_generation": False,
             "full_series_generation": False,
         },

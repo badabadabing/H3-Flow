@@ -1791,13 +1791,19 @@ function renderDramaBatchStatus(job) {
     : job.state === "error" ? "生成已安全停止" : `后台制作中${job.current_shot ? ` · ${job.current_shot}` : ""}`;
   dramaElements.batchProgressDetail.textContent = job.detail || "正在等待 ComfyUI 返回进度。";
   dramaElements.batchState.textContent = job.state === "complete"
-    ? `已完成 ${completed} 个镜头，可在结果区或 ComfyUI 输出目录查看`
+    ? `已完成 ${completed} 个镜头${(job.episode_outputs || []).length ? `与 ${(job.episode_outputs || []).length} 集成片` : ""}`
     : job.state === "error" ? "队列遇到错误，未继续消耗显卡" : "任务已交给后台，无需逐镜头操作";
+  const episodeOutputs = Array.isArray(job.episode_outputs) ? job.episode_outputs : [];
   const completedOutputs = Array.isArray(job.outputs) ? job.outputs : [];
-  dramaElements.batchResults.innerHTML = completedOutputs.map((output) => {
+  const episodeLinks = episodeOutputs.map((output) => {
     const video = (output.files || []).find((file) => ["videos", "video", "gifs"].includes(file.kind) || /\.(mp4|webm|mov|mkv|gif)$/i.test(file.filename || ""));
-    return video ? `<a href="${escapeHtml(video.url)}" target="_blank" rel="noopener"><span>${escapeHtml(output.episode_id)} · ${escapeHtml(output.shot_id)}</span><strong>查看成片</strong></a>` : "";
-  }).join("");
+    return video ? `<a class="drama-batch-result--episode" href="${escapeHtml(video.url)}" target="_blank" rel="noopener"><span>${escapeHtml(output.episode_id)} · ${escapeHtml(output.duration_seconds)} 秒整集</span><strong>播放整集</strong></a>` : "";
+  });
+  const shotLinks = completedOutputs.map((output) => {
+    const video = (output.files || []).find((file) => ["videos", "video", "gifs"].includes(file.kind) || /\.(mp4|webm|mov|mkv|gif)$/i.test(file.filename || ""));
+    return video ? `<a href="${escapeHtml(video.url)}" target="_blank" rel="noopener"><span>${escapeHtml(output.episode_id)} · ${escapeHtml(output.shot_id)}</span><strong>查看分镜</strong></a>` : "";
+  });
+  dramaElements.batchResults.innerHTML = [...episodeLinks, ...shotLinks].join("");
 }
 
 async function pollDramaBatchJob() {
@@ -1810,7 +1816,7 @@ async function pollDramaBatchJob() {
       dramaState.batchPollTimer = null;
       dramaState.batchJobId = null;
       renderDramaAssetGate();
-      showToast(job.state === "complete" ? "整部短剧的全部镜头已生成完成" : job.detail || "短剧生成已安全停止");
+      showToast(job.state === "complete" ? "整部短剧的镜头与整集成片已生成完成" : job.detail || "短剧生成已安全停止");
       return;
     }
   } catch (error) {

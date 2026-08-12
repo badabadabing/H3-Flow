@@ -600,6 +600,46 @@ non_diegetic_music: Sparse piano notes at a slow tempo with sustained low string
         self.assertTrue(bridge.is_video_output({"kind": "images", "filename": "shot_00001.mp4"}))
         self.assertFalse(bridge.is_video_output({"kind": "images", "filename": "preview_00001.png"}))
 
+    def test_short_drama_episode_assembly_uses_expected_shot_order(self) -> None:
+        package = short_drama.validate_short_drama_package(
+            self.short_drama_payload(),
+            short_drama.normalise_short_drama_request(
+                {
+                    "theme": "一名调查员发现自己的记忆正在被一份旧档案逐页改写。",
+                    "episode_count": 1,
+                    "episode_duration_seconds": 30,
+                    "cast_count": 1,
+                }
+            ),
+        )
+        units = short_drama.expand_short_drama_batch_units(package)
+        outputs = [
+            {
+                "episode_id": unit["episode"]["id"],
+                "shot_id": unit["shot"]["id"],
+                "files": [{"kind": "images", "filename": f"{unit['shot']['id']}.mp4"}],
+            }
+            for unit in reversed(units)
+        ]
+        fake_paths = {output["files"][0]["filename"]: Path(output["files"][0]["filename"]) for output in outputs}
+        with patch.object(bridge, "_ffmpeg_executable", return_value=Path("ffmpeg")), patch.object(
+            bridge, "_output_file_path", side_effect=lambda item: fake_paths[item["filename"]]
+        ), patch.object(bridge.subprocess, "run") as run, patch.object(Path, "is_file", return_value=True):
+            run.return_value.returncode = 0
+            run.return_value.stderr = ""
+            run.return_value.stdout = ""
+            result = bridge.assemble_short_drama_episodes(package, outputs, "drama_test")
+        command = run.call_args.args[0]
+        input_files = [command[index + 1] for index, value in enumerate(command[:-1]) if value == "-i"]
+        self.assertEqual(input_files, [f"{unit['shot']['id']}.mp4" for unit in units])
+        filter_graph = command[command.index("-filter_complex") + 1]
+        self.assertIn("setpts=N/(24*TB)", filter_graph)
+        self.assertIn("asetpts=N/SR/TB", filter_graph)
+        self.assertEqual(command[command.index("-fps_mode") + 1], "cfr")
+        self.assertEqual(result[0]["episode_id"], "EP-01")
+        self.assertEqual(result[0]["duration_seconds"], 30)
+        self.assertEqual(result[0]["files"][0]["kind"], "video")
+
     def test_short_drama_validator_rejects_wrong_episode_duration(self) -> None:
         request = short_drama.normalise_short_drama_request(
             {
@@ -618,6 +658,7 @@ non_diegetic_music: Sparse piano notes at a slow tempo with sustained low string
         self.assertFalse(status["capabilities"]["full_series_generation"])
         self.assertTrue(status["capabilities"]["serial_batch_generation"])
         self.assertTrue(status["capabilities"]["all_shot_batch_generation"])
+        self.assertTrue(status["capabilities"]["final_episode_assembly"])
         self.assertNotIn("private-test-key", str(status))
 
     def test_short_drama_generation_uses_json_mode_without_leaking_key(self) -> None:

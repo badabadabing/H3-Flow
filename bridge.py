@@ -9,6 +9,7 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import time
@@ -1057,6 +1058,107 @@ def is_video_output(item: dict[str, Any]) -> bool:
     return item.get("kind") in {"videos", "video", "gifs"} or suffix in {".mp4", ".webm", ".mov", ".mkv", ".gif"}
 
 
+def _ffmpeg_executable() -> Path:
+    system_ffmpeg = shutil.which("ffmpeg")
+    if system_ffmpeg:
+        return Path(system_ffmpeg)
+    try:
+        import imageio_ffmpeg
+
+        packaged_ffmpeg = Path(imageio_ffmpeg.get_ffmpeg_exe())
+        if packaged_ffmpeg.is_file():
+            return packaged_ffmpeg
+    except (ImportError, RuntimeError):
+        pass
+    binary_root = PORTABLE_ROOT / "python_embeded" / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries"
+    candidates = sorted(binary_root.glob("ffmpeg*.exe")) if binary_root.is_dir() else []
+    if candidates:
+        return candidates[0]
+    raise RuntimeError("未找到 FFmpeg，全部分镜已保留，但无法自动合成整集视频")
+
+
+def _output_file_path(item: dict[str, Any]) -> Path:
+    output_root = (COMFY_ROOT / "output").resolve()
+    filename = Path(str(item.get("filename") or "")).name
+    if not filename:
+        raise RuntimeError("镜头输出缺少文件名，无法合成整集")
+    candidate = (output_root / str(item.get("subfolder") or "") / filename).resolve()
+    if not candidate.is_relative_to(output_root) or not candidate.is_file():
+        raise RuntimeError(f"镜头文件不存在或不在 ComfyUI 输出目录：{filename}")
+    return candidate
+
+
+def assemble_short_drama_episodes(
+    package: dict[str, Any], outputs: list[dict[str, Any]], job_id: str
+) -> list[dict[str, Any]]:
+    """Encode ordered five-second shot files into one directly playable MP4 per episode."""
+    ffmpeg = _ffmpeg_executable()
+    episode_outputs: list[dict[str, Any]] = []
+    expected_units = expand_short_drama_batch_units(package)
+    for episode in package.get("episodes", []):
+        episode_id = str(episode.get("id") or "episode")
+        expected_ids = [
+            str(unit["shot"]["id"])
+            for unit in expected_units
+            if str(unit["episode"].get("id")) == episode_id
+        ]
+        by_shot = {
+            str(output.get("shot_id")): output
+            for output in outputs
+            if str(output.get("episode_id")) == episode_id
+        }
+        if any(shot_id not in by_shot for shot_id in expected_ids):
+            raise RuntimeError(f"{episode_id} 分镜不完整，已保留散片但未合成整集")
+        source_files: list[Path] = []
+        for shot_id in expected_ids:
+            video = next((item for item in by_shot[shot_id].get("files", []) if is_video_output(item)), None)
+            if not video:
+                raise RuntimeError(f"{shot_id} 没有可合成的视频文件")
+            source_files.append(_output_file_path(video))
+
+        safe_episode_id = re.sub(r"[^A-Za-z0-9_-]+", "_", episode_id)
+        output_subfolder = Path("video") / "short_drama" / job_id
+        output_dir = COMFY_ROOT / "output" / output_subfolder
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{safe_episode_id}_complete.mp4"
+        command = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-y"]
+        for source in source_files:
+            command.extend(["-i", str(source)])
+        filters = []
+        for index in range(len(source_files)):
+            filters.append(f"[{index}:v:0]setpts=N/({FPS}*TB)[v{index}]")
+            filters.append(f"[{index}:a:0]asetpts=N/SR/TB[a{index}]")
+        concat_inputs = "".join(f"[v{index}][a{index}]" for index in range(len(source_files)))
+        filters.append(f"{concat_inputs}concat=n={len(source_files)}:v=1:a=1[v][a]")
+        command.extend(
+            [
+                "-filter_complex", ";".join(filters),
+                "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "medium", "-crf", "17",
+                "-pix_fmt", "yuv420p", "-r", str(FPS), "-fps_mode", "cfr",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "32000",
+                "-movflags", "+faststart", "-t", str(int(episode.get("duration_seconds") or 0)), str(output_path),
+            ]
+        )
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, check=False)
+        if completed.returncode or not output_path.is_file():
+            detail = (completed.stderr or completed.stdout or "FFmpeg 未返回输出文件").strip()
+            raise RuntimeError(f"{episode_id} 自动合片失败，分镜已保留：{detail[:600]}")
+        filename = output_path.name
+        subfolder = str(output_subfolder)
+        query = urllib.parse.urlencode({"filename": filename, "subfolder": subfolder, "type": "output"})
+        episode_outputs.append(
+            {
+                "episode_id": episode_id,
+                "duration_seconds": int(episode.get("duration_seconds") or 0),
+                "files": [{
+                    "filename": filename, "subfolder": subfolder, "type": "output", "kind": "video",
+                    "url": f"/api/view?{query}",
+                }],
+            }
+        )
+    return episode_outputs
+
+
 def _update_drama_batch_job(job_id: str, **changes: Any) -> None:
     with DRAMA_BATCH_LOCK:
         job = DRAMA_BATCH_JOBS.get(job_id)
@@ -1161,12 +1263,14 @@ def _run_short_drama_batch(
                         _wait_for_empty_comfy_queue()
             if last_error is not None:
                 raise RuntimeError(f"{shot_id} 连续两次未完成：{last_error}")
+        episode_outputs = assemble_short_drama_episodes(package, outputs, job_id)
         _update_drama_batch_job(
             job_id,
             state="complete",
             current_shot=None,
             current_prompt_id=None,
-            detail=f"全部 {completed} 个镜头已完成，并按分集与镜头编号保存到 ComfyUI 输出目录",
+            episode_outputs=episode_outputs,
+            detail=f"全部 {completed} 个镜头与 {len(episode_outputs)} 集成片已完成",
         )
     except Exception as exc:
         _update_drama_batch_job(
@@ -1208,6 +1312,7 @@ def start_short_drama_batch(payload: dict[str, Any]) -> dict[str, Any]:
             "quality_applied": gate["quality_applied"],
             "execution_mode": gate["execution_mode"],
             "outputs": [],
+            "episode_outputs": [],
             "detail": "已通过生成前检查，正在启动后台串行队列",
             "created_at": time.time(),
             "updated_at": time.time(),

@@ -21,6 +21,6 @@ The default five-second mode accepts one complete scene prompt. For 10, 15, or 3
 
 Switch the top navigation to **AI Short Drama**, enter the story, episode count, and duration, then approve each main character image. The **Generate all shots** action preflights assets, models, memory, VRAM, and queue state before a single background worker submits one five-second H3 unit at a time. API keys and provider configuration are excluded from browser drafts. See [short-drama-mode.md](docs/short-drama-mode.md).
 
-This release generates and exposes every shot without page switching. Final episode assembly, durable resume after the local bridge restarts, automated visual continuity scoring, and release-ready full-series claims remain gated and are documented in the [AI short-drama roadmap](docs/ai-short-drama-roadmap.md).
+This release generates every shot without page switching, then assembles each episode into an exact 24 fps MP4 while retaining the individual shot files for review and repair. Durable resume after the local bridge restarts, automated visual continuity scoring, and release-ready full-series claims remain gated and are documented in the [AI short-drama roadmap](docs/ai-short-drama-roadmap.md).
 
 H3 Flow is MIT-licensed. Model weights, ComfyUI, and third-party plugins are not included and remain subject to their respective licenses.

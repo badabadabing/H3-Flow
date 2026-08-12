@@ -1,1 +1,2 @@
 Pillow>=11.0,<13
+imageio-ffmpeg>=0.6,<1
